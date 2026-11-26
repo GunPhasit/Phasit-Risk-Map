@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+.netlify/
+.env
+.env.local
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo
+/data/
+.server-secrets.json

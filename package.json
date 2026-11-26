@@ -1,0 +1,44 @@
+{
+  "name": "thailand-risk-map",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ระบบแผนที่แสดงระดับความเสี่ยงสาธารณภัยแห่งประเทศไทย 77 จังหวัด 10 ภัยพิบัติ (Thailand Multi-Hazard Risk Map)",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "node server/index.ts",
+    "start": "node server/index.ts",
+    "build": "tsc -b && vite build",
+    "preview": "node server/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify-geo": "node scripts/verify-geo.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans-thai": "^5.2.5",
+    "d3-geo": "^3.1.1",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
+    "lucide-react": "^0.475.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.9",
+    "@types/d3-geo": "^3.1.0",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-zoom": "^3.0.8",
+    "@types/node": "^22.13.5",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/topojson-client": "^3.1.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.9",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3",
+    "typescript": "~5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.7"
+  }
+}
