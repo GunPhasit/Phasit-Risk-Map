@@ -1,15 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, Download, GitCompareArrows, MapPin, Search } from 'lucide-react';
-import { HAZARD_BY_ID } from '../../data/hazardCatalog';
-import { SUB_INDICATOR_BY_ID } from '../../data/indicatorCatalog';
+import { HAZARD_BY_ID } from '../../data/hazardCatalog.ts';
+import { SUB_INDICATOR_BY_ID } from '../../data/indicatorCatalog.ts';
 import {
   getPaletteForDimension,
   MAP_DIMENSION_META,
   NA_RISK_STYLE,
   REGION6_LABELS,
   RISK_LEVEL_LIST,
-} from '../../data/riskPalette';
-import { triggerCsvDownload } from '../../domain/csvExporter';
+} from '../../data/riskPalette.ts';
+import { triggerCsvDownload } from '../../domain/csvExporter.ts';
 import type {
   LayerSelection,
   MapDimension,
@@ -17,8 +17,8 @@ import type {
   RegionFilterKey,
   RiskLevel,
   SubIndicatorId,
-} from '../../types/risk';
-import { RiskBadge } from '../common/RiskBadge';
+} from '../../types/risk.ts';
+import { RiskBadge } from '../common/RiskBadge.tsx';
 
 interface ProvinceRankingTableProps {
   evaluations: readonly ProvinceEvaluation[];
@@ -35,6 +35,21 @@ interface ProvinceRankingTableProps {
 
 type SortKey = 'rank' | 'name' | 'score' | 'H' | 'E' | 'V' | 'C';
 
+function useIsDesktopMd(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isDesktop;
+}
+
 export function ProvinceRankingTable({
   evaluations,
   activeDimension,
@@ -47,6 +62,7 @@ export function ProvinceRankingTable({
   onSelectProvince,
   onToggleCompare,
 }: ProvinceRankingTableProps) {
+  const isDesktop = useIsDesktopMd();
   const [tableSearch, setTableSearch] = useState('');
   const [selectedLevels, setSelectedLevels] = useState<RiskLevel[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('rank');
@@ -68,6 +84,11 @@ export function ProvinceRankingTable({
       setSortKey(key);
       setSortAsc(key === 'rank' || key === 'name');
     }
+  };
+
+  const ariaSortFor = (key: SortKey): 'ascending' | 'descending' | 'none' => {
+    if (sortKey !== key) return 'none';
+    return sortAsc ? 'ascending' : 'descending';
   };
 
   const filteredAndSorted = useMemo(() => {
@@ -126,15 +147,15 @@ export function ProvinceRankingTable({
   return (
     <section
       aria-label="ตารางจัดอันดับ 77 จังหวัด ตามกรอบแผน ปภ. ชาติ พ.ศ. 2564-2570"
-      className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden"
+      className="gov-card overflow-hidden"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/70 px-5 py-4">
         <div>
-          <h2 className="text-base font-bold text-[#0F294A]">
-            ตารางข้อมูลและจัดอันดับ 77 จังหวัด ({contextLabel})
+          <h2 className="text-lg font-bold text-[#0C2340]">
+            ตารางจัดอันดับ 77 จังหวัด ({contextLabel})
           </h2>
           <p className="text-xs text-slate-600 tabular-nums mt-0.5">
-            แสดงผล {filteredAndSorted.length} จาก 77 จังหวัด ประจำ{activePeriodLabelTh} พร้อมคะแนนรายปัจจัยทั้ง 4 ด้าน
+            แสดงผล {filteredAndSorted.length} จาก 77 จังหวัด ประจำ{activePeriodLabelTh} พร้อมคะแนนครบทั้ง 4 ปัจจัย
           </p>
         </div>
 
@@ -147,26 +168,26 @@ export function ProvinceRankingTable({
               activePeriodId,
             )
           }
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F294A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#163A66] transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C2340] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#16355B] transition-colors"
         >
           <Download className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>ส่งออก CSV (ครบ 13 ตัวชี้วัดย่อย)</span>
+          <span>ส่งออก CSV (ครบ 13 ตัวชี้วัด)</span>
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
-        <div className="relative w-full sm:w-64">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-100 px-5 py-3">
+        <div className="relative w-full sm:w-72">
           <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
             aria-hidden="true"
           />
           <input
             type="text"
             value={tableSearch}
             onChange={(e) => setTableSearch(e.target.value)}
-            placeholder="กรองชื่อจังหวัดในตาราง..."
+            placeholder="ค้นหาชื่อจังหวัดหรือคำย่อในตาราง..."
             aria-label="กรองชื่อจังหวัดในตาราง"
-            className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#1D4ED8]"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1D4ED8]"
           />
         </div>
 
@@ -180,11 +201,11 @@ export function ProvinceRankingTable({
                 type="button"
                 onClick={() => toggleLevel(lvl)}
                 aria-pressed={active}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                   active
                     ? isCapacityMode
-                      ? 'border-[#115E59] bg-[#115E59] text-white'
-                      : 'border-[#0F294A] bg-[#0F294A] text-white'
+                      ? 'border-[#0D9488] bg-[#0D9488] text-white'
+                      : 'border-[#0C2340] bg-[#0C2340] text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -201,7 +222,7 @@ export function ProvinceRankingTable({
             <button
               type="button"
               onClick={() => setSelectedLevels([])}
-              className="text-xs font-medium text-[#1D4ED8] hover:underline px-1"
+              className="text-xs font-semibold text-[#1D4ED8] hover:underline px-1.5"
             >
               ล้างตัวกรอง
             </button>
@@ -209,116 +230,220 @@ export function ProvinceRankingTable({
         </div>
       </div>
 
-      {/* Desktop Table */}
-      <div className="hidden md:block overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full border-collapse text-left text-xs sm:text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 border-b border-slate-200">
-            <tr>
-              <th className="py-2.5 pl-4 pr-2 font-semibold w-14">
-                <button
-                  type="button"
-                  onClick={() => handleSort('rank')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
+      {/* เรนเดอร์เฉพาะชุดที่ตรงกับขนาดหน้าจอ (ลด DOM ลงครึ่งหนึ่ง) */}
+      {isDesktop ? (
+        <div className="overflow-x-auto max-h-[calc(100vh-260px)] overflow-y-auto">
+          <table className="w-full border-collapse text-left text-[13px]">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 border-b border-slate-200 text-xs">
+              <tr>
+                <th aria-sort={ariaSortFor('rank')} className="py-3 pl-5 pr-2 font-semibold w-16">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('rank')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    อันดับ <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th aria-sort={ariaSortFor('name')} className="py-3 px-2 font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('name')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    จังหวัด <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th className="py-3 px-2 font-semibold">ภูมิภาค</th>
+                <th aria-sort={ariaSortFor('score')} className="py-3 px-2 font-semibold text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('score')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    คะแนนมิตินี้ <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th className="py-3 px-2 font-semibold">ระดับ</th>
+                <th aria-sort={ariaSortFor('H')} className="py-3 px-2 font-semibold text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('H')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    ภัยคุกคาม <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th aria-sort={ariaSortFor('E')} className="py-3 px-2 font-semibold text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('E')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    ล่อแหลม <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th aria-sort={ariaSortFor('V')} className="py-3 px-2 font-semibold text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('V')}
+                    className="inline-flex items-center gap-1 hover:text-[#0C2340]"
+                  >
+                    เปราะบาง <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th
+                  aria-sort={ariaSortFor('C')}
+                  className="py-3 px-2 font-semibold text-right text-[#0D9488]"
                 >
-                  อันดับ <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold">
-                <button
-                  type="button"
-                  onClick={() => handleSort('name')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
-                >
-                  จังหวัด <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold">ภูมิภาค (6 ภาค)</th>
-              <th className="py-2.5 px-2 font-semibold text-right">
-                <button
-                  type="button"
-                  onClick={() => handleSort('score')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
-                >
-                  คะแนนมิตินี้ <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold">ระดับ</th>
-              <th className="py-2.5 px-2 font-semibold text-right">
-                <button
-                  type="button"
-                  onClick={() => handleSort('H')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
-                >
-                  ภัยคุกคาม <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold text-right">
-                <button
-                  type="button"
-                  onClick={() => handleSort('E')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
-                >
-                  ล่อแหลม <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold text-right">
-                <button
-                  type="button"
-                  onClick={() => handleSort('V')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F294A]"
-                >
-                  เปราะบาง <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 px-2 font-semibold text-right text-[#115E59]">
-                <button
-                  type="button"
-                  onClick={() => handleSort('C')}
-                  className="inline-flex items-center gap-1 hover:text-[#0F766E]"
-                >
-                  ศักยภาพ <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="py-2.5 pl-2 pr-4 font-semibold text-center">เปรียบเทียบ</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredAndSorted.map((ev) => {
-              const barColor =
-                ev.level !== null ? palette[ev.level].mapFill : NA_RISK_STYLE.mapFill;
-              const isCompared = compareCodes.includes(ev.province.dopaCode);
-              const compareFull = compareCodes.length >= 3 && !isCompared;
-              return (
-                <tr key={ev.province.dopaCode} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-2.5 pl-4 pr-2 font-bold text-slate-600 tabular-nums">
-                    {ev.rank}
-                  </td>
-                  <td className="py-2.5 px-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectProvince(ev.province.dopaCode)}
-                      className="flex items-center gap-2 text-left font-semibold text-[#0F294A] hover:text-[#1D4ED8] hover:underline"
-                    >
-                      <span
-                        className="h-5 w-1.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: barColor }}
-                        aria-hidden="true"
-                      />
-                      <span>{ev.province.nameTh}</span>
-                      {ev.breakdown.isSimulated && (
-                        <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-900">
-                          จำลอง
+                  <button
+                    type="button"
+                    onClick={() => handleSort('C')}
+                    className="inline-flex items-center gap-1 hover:text-[#115E59]"
+                  >
+                    ศักยภาพ <ArrowUpDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th className="py-3 pl-2 pr-5 font-semibold text-center">เปรียบเทียบ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredAndSorted.map((ev) => {
+                const barColor =
+                  ev.level !== null ? palette[ev.level].mapFill : NA_RISK_STYLE.mapFill;
+                const isCompared = compareCodes.includes(ev.province.dopaCode);
+                const compareFull = compareCodes.length >= 3 && !isCompared;
+                return (
+                  <tr key={ev.province.dopaCode} className="hover:bg-slate-50/90 transition-colors">
+                    <td className="py-3 pl-5 pr-2 font-bold text-slate-500 tabular-nums">
+                      {ev.rank}
+                    </td>
+                    <td className="py-3 px-2">
+                      <button
+                        type="button"
+                        onClick={() => onSelectProvince(ev.province.dopaCode)}
+                        className="flex items-center gap-2.5 text-left font-semibold text-[#0C2340] hover:text-[#1D4ED8] hover:underline"
+                      >
+                        <span
+                          className="h-5 w-1.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: barColor }}
+                          aria-hidden="true"
+                        />
+                        <span>{ev.province.nameTh}</span>
+                        {ev.breakdown.isSimulated && (
+                          <span className="rounded bg-teal-100 px-1.5 py-0.5 text-xs font-semibold text-teal-900">
+                            จำลอง
+                          </span>
+                        )}
+                      </button>
+                    </td>
+                    <td className="py-3 px-2 text-xs text-slate-600">
+                      {REGION6_LABELS[ev.province.region6]}
+                    </td>
+                    <td className="py-3 px-2 text-right tabular-nums">
+                      <div className="inline-flex items-center gap-2">
+                        <div className="hidden lg:block w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          {ev.score !== null && (
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${(ev.score / 5) * 100}%`,
+                                backgroundColor: barColor,
+                              }}
+                            />
+                          )}
+                        </div>
+                        <span className="font-bold text-slate-900">
+                          {ev.score !== null ? ev.score.toFixed(2) : 'N/A'}
                         </span>
-                      )}
-                    </button>
-                  </td>
-                  <td className="py-2.5 px-2 text-xs text-slate-600">
-                    {REGION6_LABELS[ev.province.region6]}
-                  </td>
-                  <td className="py-2.5 px-2 text-right font-bold text-slate-900 tabular-nums">
-                    {ev.score !== null ? ev.score.toFixed(2) : 'N/A'}
-                  </td>
-                  <td className="py-2.5 px-2">
+                      </div>
+                    </td>
+                    <td className="py-3 px-2">
+                      <RiskBadge
+                        level={ev.level}
+                        dimension={activeDimension}
+                        variant="tinted"
+                        size="sm"
+                        compact
+                      />
+                    </td>
+                    <td className="py-3 px-2 text-right text-slate-700 tabular-nums">
+                      {ev.breakdown.hazardCompositeScore.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-2 text-right text-slate-700 tabular-nums">
+                      {ev.breakdown.exposureScore.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-2 text-right text-slate-700 tabular-nums">
+                      {ev.breakdown.vulnerabilityScore.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-2 text-right font-bold text-[#0D9488] tabular-nums">
+                      {ev.breakdown.effectiveCapacityScore.toFixed(2)}
+                    </td>
+                    <td className="py-3 pl-2 pr-5 text-center">
+                      <button
+                        type="button"
+                        disabled={compareFull}
+                        onClick={() => onToggleCompare(ev.province.dopaCode)}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          isCompared
+                            ? 'border-violet-600 bg-violet-600 text-white'
+                            : compareFull
+                              ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <GitCompareArrows className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>{isCompared ? 'เลือกแล้ว' : 'เทียบ'}</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {filteredAndSorted.map((ev) => {
+            const barColor =
+              ev.level !== null ? palette[ev.level].mapFill : NA_RISK_STYLE.mapFill;
+            const isCompared = compareCodes.includes(ev.province.dopaCode);
+            return (
+              <div key={ev.province.dopaCode} className="flex items-center justify-between gap-3 p-3.5">
+                <button
+                  type="button"
+                  onClick={() => onSelectProvince(ev.province.dopaCode)}
+                  className="flex items-start gap-2.5 text-left min-w-0 flex-1"
+                >
+                  <span
+                    className="mt-0.5 h-11 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: barColor }}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-500 tabular-nums">#{ev.rank}</span>
+                      <span className="truncate text-sm font-semibold text-[#0C2340]">
+                        {ev.province.nameTh}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500 tabular-nums">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>{REGION6_LABELS[ev.province.region6]}</span>
+                      <span>•</span>
+                      <span>ภัย {ev.breakdown.hazardCompositeScore.toFixed(1)}</span>
+                      <span className="text-[#0D9488] font-semibold">
+                        ศักยภาพ {ev.breakdown.effectiveCapacityScore.toFixed(1)}
+                      </span>
+                    </p>
+                  </div>
+                </button>
+
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-slate-900 tabular-nums">
+                      {ev.score !== null ? ev.score.toFixed(2) : 'N/A'}
+                    </span>
                     <RiskBadge
                       level={ev.level}
                       dimension={activeDimension}
@@ -326,108 +451,23 @@ export function ProvinceRankingTable({
                       size="sm"
                       compact
                     />
-                  </td>
-                  <td className="py-2.5 px-2 text-right text-xs text-slate-700 tabular-nums">
-                    {ev.breakdown.hazardCompositeScore.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-2 text-right text-xs text-slate-700 tabular-nums">
-                    {ev.breakdown.exposureScore.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-2 text-right text-xs text-slate-700 tabular-nums">
-                    {ev.breakdown.vulnerabilityScore.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-2 text-right text-xs font-bold text-[#0F766E] tabular-nums">
-                    {ev.breakdown.effectiveCapacityScore.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 pl-2 pr-4 text-center">
-                    <button
-                      type="button"
-                      disabled={compareFull}
-                      onClick={() => onToggleCompare(ev.province.dopaCode)}
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${
-                        isCompared
-                          ? 'border-violet-600 bg-violet-600 text-white'
-                          : compareFull
-                            ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <GitCompareArrows className="h-3 w-3" aria-hidden="true" />
-                      <span>{isCompared ? 'เลือกแล้ว' : 'เทียบ'}</span>
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile Compact Ranked Cards */}
-      <div className="md:hidden divide-y divide-slate-100">
-        {filteredAndSorted.map((ev) => {
-          const barColor =
-            ev.level !== null ? palette[ev.level].mapFill : NA_RISK_STYLE.mapFill;
-          const isCompared = compareCodes.includes(ev.province.dopaCode);
-          return (
-            <div key={ev.province.dopaCode} className="flex items-center justify-between gap-2 p-3">
-              <button
-                type="button"
-                onClick={() => onSelectProvince(ev.province.dopaCode)}
-                className="flex items-start gap-2.5 text-left min-w-0 flex-1"
-              >
-                <span
-                  className="mt-0.5 h-11 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: barColor }}
-                  aria-hidden="true"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-500 tabular-nums">#{ev.rank}</span>
-                    <span className="truncate text-sm font-semibold text-[#0F294A]">
-                      {ev.province.nameTh}
-                    </span>
                   </div>
-                  <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500 tabular-nums">
-                    <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    <span>{REGION6_LABELS[ev.province.region6]}</span>
-                    <span>|</span>
-                    <span>ภัย {ev.breakdown.hazardCompositeScore.toFixed(1)}</span>
-                    <span className="text-[#0F766E] font-semibold">
-                      ศักยภาพ {ev.breakdown.effectiveCapacityScore.toFixed(1)}
-                    </span>
-                  </p>
+                  <button
+                    type="button"
+                    disabled={compareCodes.length >= 3 && !isCompared}
+                    onClick={() => onToggleCompare(ev.province.dopaCode)}
+                    className={`min-h-[36px] px-2 rounded-md text-xs font-semibold ${
+                      isCompared ? 'bg-violet-50 text-violet-700' : 'text-[#1D4ED8]'
+                    }`}
+                  >
+                    {isCompared ? 'เลือกเทียบแล้ว' : '+ เปรียบเทียบ'}
+                  </button>
                 </div>
-              </button>
-
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-slate-900 tabular-nums">
-                    {ev.score !== null ? ev.score.toFixed(2) : 'N/A'}
-                  </span>
-                  <RiskBadge
-                    level={ev.level}
-                    dimension={activeDimension}
-                    variant="tinted"
-                    size="sm"
-                    compact
-                  />
-                </div>
-                <button
-                  type="button"
-                  disabled={compareCodes.length >= 3 && !isCompared}
-                  onClick={() => onToggleCompare(ev.province.dopaCode)}
-                  className={`text-[11px] font-medium ${
-                    isCompared ? 'text-violet-700 font-semibold' : 'text-[#1D4ED8]'
-                  }`}
-                >
-                  {isCompared ? '✓ อยู่ในรายการเทียบ' : '+ เปรียบเทียบ'}
-                </button>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

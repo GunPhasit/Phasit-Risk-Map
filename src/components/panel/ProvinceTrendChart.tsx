@@ -14,11 +14,11 @@ export function ProvinceTrendChart({
   if (trend.length < 2) return null;
 
   const width = 340;
-  const height = 108;
+  const height = 104;
   const padLeft = 28;
   const padRight = 16;
-  const padTop = 14;
-  const padBottom = 24;
+  const padTop = 12;
+  const padBottom = 22;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
 
@@ -35,28 +35,23 @@ export function ProvinceTrendChart({
   const deltaC = +(last.capacityScore - first.capacityScore).toFixed(2);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
-        <span className="font-semibold text-[#0F294A]">
-          แนวโน้มความเสี่ยงและศักยภาพรายงวด ({trend.length} งวด)
+    <div className="space-y-2 pt-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
+        <span className="inline-flex items-center gap-1.5 text-slate-700">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#DC2626]" aria-hidden="true" />
+          ความเสี่ยง {deltaR > 0 ? `+${deltaR.toFixed(2)}` : deltaR.toFixed(2)}
         </span>
-        <div className="flex items-center gap-2.5 tabular-nums">
-          <span className="inline-flex items-center gap-1 text-slate-700">
-            <span className="h-2 w-2 rounded-full bg-[#DC2626]" aria-hidden="true" />
-            ความเสี่ยง {deltaR > 0 ? `+${deltaR.toFixed(2)}` : deltaR.toFixed(2)}
-          </span>
-          <span className="inline-flex items-center gap-1 text-teal-800">
-            <span className="h-2 w-2 rounded-full bg-[#0D9488]" aria-hidden="true" />
-            ศักยภาพ {deltaC > 0 ? `+${deltaC.toFixed(2)}` : deltaC.toFixed(2)}
-          </span>
-        </div>
+        <span className="inline-flex items-center gap-1.5 text-teal-800">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#0D9488]" aria-hidden="true" />
+          ศักยภาพ {deltaC > 0 ? `+${deltaC.toFixed(2)}` : deltaC.toFixed(2)}
+        </span>
       </div>
 
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label="กราฟเส้นแสดงแนวโน้มความเสี่ยงสุทธิและศักยภาพย้อนหลังรายงวด"
-        className="w-full h-[108px] overflow-visible"
+        className="w-full h-[104px] overflow-visible"
       >
         {[1, 2, 3, 4, 5].map((tick) => {
           const y = yFor(tick);
@@ -73,9 +68,9 @@ export function ProvinceTrendChart({
               />
               <text
                 x={padLeft - 6}
-                y={y + 3}
+                y={y + 4}
                 textAnchor="end"
-                className="fill-slate-400 text-[9px] tabular-nums"
+                className="fill-slate-400 text-xs tabular-nums"
               >
                 {tick}
               </text>
@@ -119,7 +114,7 @@ export function ProvinceTrendChart({
                   x2={cx}
                   y1={padTop - 2}
                   y2={height - padBottom + 2}
-                  stroke="#0F294A"
+                  stroke="#0C2340"
                   strokeWidth="1"
                   strokeDasharray="2 2"
                 />
@@ -139,17 +134,17 @@ export function ProvinceTrendChart({
                 cy={cyR}
                 r={active ? 4.5 : 3.2}
                 fill="#DC2626"
-                stroke={active ? '#0F294A' : '#FFFFFF'}
+                stroke={active ? '#0C2340' : '#FFFFFF'}
                 strokeWidth={active ? '1.8' : '1.2'}
               >
                 <title>{`${pt.labelTh}: ความเสี่ยงสุทธิ ${pt.ddpmScore.toFixed(2)}`}</title>
               </circle>
               <text
                 x={cx}
-                y={height - 6}
+                y={height - 4}
                 textAnchor="middle"
-                className={`text-[9px] tabular-nums ${
-                  active ? 'fill-[#0F294A] font-bold' : 'fill-slate-500'
+                className={`text-xs tabular-nums ${
+                  active ? 'fill-[#0C2340] font-bold' : 'fill-slate-500'
                 }`}
               >
                 {shortCode}
@@ -159,8 +154,8 @@ export function ProvinceTrendChart({
         })}
       </svg>
 
-      <p className="text-[10px] text-slate-500">
-        เลือกจุดบนกราฟเพื่อดูแผนที่และข้อมูลรายอำเภอในงวดนั้น
+      <p className="text-xs text-slate-500">
+        คลิกจุดบนกราฟเพื่อสลับดูข้อมูลในงวดนั้น
       </p>
     </div>
   );

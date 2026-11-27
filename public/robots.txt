@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/auth/
+Disallow: /api/officer/
+Disallow: /api/admin/

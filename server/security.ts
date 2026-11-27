@@ -68,12 +68,34 @@ export function verifyPassword(password: string, storedHash: string): boolean {
   return crypto.timingSafeEqual(actual, expected);
 }
 
+export function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) {
+    // ทำงานเทียบเวลาคงที่แม้ความยาวต่างกัน
+    const dummy = Buffer.alloc(bufB.length);
+    crypto.timingSafeEqual(dummy, bufB);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // ==================== AES-256-GCM Secret Encryption at Rest ====================
 
-export function resolveMasterKey(projectRoot: string, inMemory: boolean): Buffer {
+export function resolveMasterKey(
+  projectRoot: string,
+  inMemory: boolean,
+  masterKeyOverride?: Buffer,
+): Buffer {
+  if (masterKeyOverride && masterKeyOverride.length === 32) {
+    return masterKeyOverride;
+  }
   const envKey = process.env.DDPM_MASTER_KEY;
   if (envKey && envKey.length >= 32) {
     return crypto.createHash('sha256').update(envKey, 'utf8').digest();
+  }
+  if (!inMemory && process.env.DDPM_STRICT_PROD === 'true') {
+    throw new Error('DDPM_MASTER_KEY (>= 32 characters) is required when DDPM_STRICT_PROD=true');
   }
   if (inMemory) {
     return crypto.randomBytes(32);

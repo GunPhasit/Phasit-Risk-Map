@@ -4,12 +4,15 @@ import type {
   AuthUser,
   ChangeRequestRecord,
   DemoAccountInfo,
+  DistrictCatalogSummaryItem,
   DistrictEvaluation,
   DistrictMetricsPayload,
   PeriodProvincesResponse,
   ProvinceDistrictsResponse,
+  ProvinceProgressResponse,
   ProvinceTrendPoint,
   ReportingPeriod,
+  SystemHealthInfo,
 } from '../types/index.ts';
 
 export class ApiError extends Error {
@@ -56,6 +59,10 @@ async function requestJson<T>(
 
 // ==================== Public Endpoints ====================
 
+export async function fetchSystemHealth(): Promise<SystemHealthInfo> {
+  return requestJson<SystemHealthInfo>('/api/public/health');
+}
+
 export async function fetchPeriods(): Promise<ReportingPeriod[]> {
   const res = await requestJson<{ periods: ReportingPeriod[] }>('/api/public/periods');
   return res.periods;
@@ -74,6 +81,26 @@ export async function fetchProvinceDistricts(
   return requestJson<ProvinceDistrictsResponse>(
     `/api/public/provinces/${encodeURIComponent(provinceCode)}/districts${q}`,
   );
+}
+
+export async function fetchDistrictsCatalog(
+  periodId?: string,
+): Promise<{ period: ReportingPeriod; districts: DistrictCatalogSummaryItem[] }> {
+  const q = periodId ? `?period=${encodeURIComponent(periodId)}` : '';
+  return requestJson<{ period: ReportingPeriod; districts: DistrictCatalogSummaryItem[] }>(
+    `/api/public/districts-catalog${q}`,
+  );
+}
+
+export async function fetchSingleDistrict(
+  districtCode: string,
+  periodId?: string,
+): Promise<DistrictEvaluation> {
+  const q = periodId ? `?period=${encodeURIComponent(periodId)}` : '';
+  const res = await requestJson<{ district: DistrictEvaluation }>(
+    `/api/public/districts/${encodeURIComponent(districtCode)}${q}`,
+  );
+  return res.district;
 }
 
 export async function fetchProvinceTrend(provinceCode: string): Promise<ProvinceTrendPoint[]> {
@@ -154,6 +181,11 @@ export interface OfficerScopeResponse {
 export async function fetchOfficerScope(periodId?: string): Promise<OfficerScopeResponse> {
   const q = periodId ? `?period=${encodeURIComponent(periodId)}` : '';
   return requestJson<OfficerScopeResponse>(`/api/officer/scope${q}`);
+}
+
+export async function fetchProvinceProgress(periodId?: string): Promise<ProvinceProgressResponse> {
+  const q = periodId ? `?period=${encodeURIComponent(periodId)}` : '';
+  return requestJson<ProvinceProgressResponse>(`/api/officer/province-progress${q}`);
 }
 
 export async function submitDistrictChange(

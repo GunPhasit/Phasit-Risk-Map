@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ArrowDownWideNarrow, ChevronDown, ChevronUp, Edit3, Lock, Search } from 'lucide-react';
+import { ArrowDownWideNarrow, ChevronDown, ChevronUp, Edit3, Search } from 'lucide-react';
 import { HAZARD_BY_ID } from '../../data/hazardCatalog.ts';
 import { CAPACITY_INDICATORS } from '../../data/indicatorCatalog.ts';
 import { CAPACITY_LEVEL_STYLES, RISK_LEVEL_STYLES } from '../../data/riskPalette.ts';
+import { DISTRICT_GEO_CLASS_LABELS_TH } from '../../data/variableRubricCatalog.ts';
 import { scoreToRiskLevel } from '../../domain/riskCalculator.ts';
 import type { AuthUser, DistrictEvaluation } from '../../types/index.ts';
 import { RiskBadge } from '../common/RiskBadge.tsx';
@@ -13,16 +14,8 @@ interface ProvinceDistrictsTabProps {
   districts: readonly DistrictEvaluation[];
   loading: boolean;
   authUser: AuthUser | null;
-  onOpenOfficerEdit: (districtCode: string) => void;
+  onOpenDistrictEditor: (districtCode: string) => void;
 }
-
-const GEO_CLASS_LABELS: Record<DistrictEvaluation['district']['geoClass'], string> = {
-  metro: 'เขตเมืองหลัก',
-  coastal: 'พื้นที่ชายฝั่ง',
-  mountain: 'พื้นที่ภูเขา/ลาดชัน',
-  river_basin: 'พื้นที่ลุ่มน้ำ',
-  rural: 'พื้นที่เกษตรกรรม',
-};
 
 export function ProvinceDistrictsTab({
   provinceNameTh,
@@ -30,7 +23,7 @@ export function ProvinceDistrictsTab({
   districts,
   loading,
   authUser,
-  onOpenOfficerEdit,
+  onOpenDistrictEditor,
 }: ProvinceDistrictsTabProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'risk' | 'capacity' | 'name'>('risk');
@@ -64,27 +57,22 @@ export function ProvinceDistrictsTab({
   if (loading) {
     return (
       <div className="py-8 text-center text-xs text-slate-500">
-        กำลังดึงข้อมูลรายอำเภอของ{provinceNameTh}...
+        กำลังโหลดข้อมูลรายอำเภอของ{provinceNameTh}...
       </div>
     );
   }
 
   if (districts.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-600">
-        ยังไม่มีข้อมูลรายอำเภอในขณะนี้ ระบบกำลังแสดงข้อมูลภาพรวมระดับจังหวัด
+      <div className="rounded-xl bg-slate-50 p-4 text-center text-xs text-slate-600">
+        ไม่พบรายการอำเภอในงวด {periodLabelTh}
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-[11px] text-slate-700 leading-relaxed">
-        ข้อมูลครบทั้ง {districts.length} อำเภอ/เขต ประจำ<strong>{periodLabelTh}</strong>{' '}
-        โดยคะแนนระดับจังหวัดคำนวณรวมจากข้อมูลรายอำเภอ
-      </div>
-
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
@@ -92,155 +80,127 @@ export function ProvinceDistrictsTab({
           />
           <input
             type="text"
+            aria-label="ค้นหาชื่ออำเภอหรือรหัส 4 หลัก"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="ค้นหาชื่ออำเภอ/เขต หรือรหัส 4 หลัก"
-            className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 focus:border-[#1D4ED8]"
+            placeholder="ค้นหาอำเภอ/เขต หรือรหัส 4 หลัก"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#1D4ED8]"
           />
         </div>
-        <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px]">
-          <ArrowDownWideNarrow className="h-3 w-3 text-slate-400" aria-hidden="true" />
+
+        <div className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs focus-within:ring-2 focus-within:ring-[#1D4ED8]">
+          <ArrowDownWideNarrow className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
           <select
             aria-label="เรียงลำดับรายอำเภอ"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'risk' | 'capacity' | 'name')}
-            className="bg-transparent font-medium text-slate-700 focus:outline-none"
+            className="bg-transparent font-medium text-slate-700"
           >
             <option value="risk">เสี่ยงสูงสุด</option>
-            <option value="capacity">ศักยภาพสูงสุด</option>
+            <option value="capacity">ศักยภาพสูง</option>
             <option value="name">เรียง ก-ฮ</option>
           </select>
         </div>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200/80 bg-white overflow-hidden">
         {filtered.map((item) => {
           const isExpanded = expandedCode === item.district.code;
-          const canEditThisDistrict =
+          const isOfficerAssigned =
             authUser?.role === 'district_officer' &&
             authUser.districtCode === item.district.code &&
             authUser.provinceCode === item.district.provinceCode;
-          const isOtherOfficerLocked =
-            authUser?.role === 'district_officer' && !canEditThisDistrict;
           const riskStyle = RISK_LEVEL_STYLES[item.ddpmLevel];
           const delta = item.deltaFromPrevious;
 
           return (
-            <div
-              key={item.district.code}
-              className={`rounded-xl border transition-colors ${
-                canEditThisDistrict
-                  ? 'border-emerald-300 bg-emerald-50/35'
-                  : 'border-slate-200 bg-white'
-              }`}
-            >
+            <div key={item.district.code} className={isOfficerAssigned ? 'bg-emerald-50/40' : ''}>
               <button
                 type="button"
-                onClick={() =>
-                  setExpandedCode(isExpanded ? null : item.district.code)
-                }
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50/70 rounded-xl"
+                aria-expanded={isExpanded}
+                onClick={() => setExpandedCode(isExpanded ? null : item.district.code)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50/80 transition-colors"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-bold text-[#0F294A] truncate">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: riskStyle.mapFill }}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[13px] font-semibold text-[#0C2340] truncate">
                       {item.district.fullNameTh}
                     </span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 tabular-nums">
-                      {item.district.code}
-                    </span>
-                    {canEditThisDistrict && (
-                      <span className="rounded-full bg-emerald-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        เขตพื้นที่รับผิดชอบของท่าน
+                    {isOfficerAssigned && (
+                      <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-white">
+                        พื้นที่รับผิดชอบของท่าน
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-[10px] text-slate-500 tabular-nums">
-                    {GEO_CLASS_LABELS[item.district.geoClass]} | ภัยเด่น:{' '}
-                    {HAZARD_BY_ID[item.dominantHazardId].shortNameTh} | ศักยภาพ{' '}
-                    {item.capacityScore.toFixed(2)}
+                  <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+                    {DISTRICT_GEO_CLASS_LABELS_TH[item.district.geoClass]} • ภัยเด่น:{' '}
+                    {HAZARD_BY_ID[item.dominantHazardId].shortNameTh}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-right tabular-nums">
-                    <div className="flex items-center justify-end gap-1">
-                      <span className="text-sm font-bold text-[#0F294A]">
-                        {item.ddpmScore.toFixed(2)}
-                      </span>
-                      <span
-                        className="inline-flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold"
-                        style={{
-                          backgroundColor: riskStyle.badgeBg,
-                          color: riskStyle.badgeText,
-                        }}
-                      >
-                        {riskStyle.symbol}
-                      </span>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-[#0C2340]">
+                      {item.ddpmScore.toFixed(2)}
+                    </span>
                     {delta !== null && Math.abs(delta) >= 0.01 && (
                       <p
-                        className={`text-[10px] font-semibold ${
+                        className={`text-xs font-medium ${
                           delta < 0 ? 'text-emerald-700' : 'text-rose-700'
                         }`}
                       >
-                        {delta > 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2)} จากงวดก่อน
+                        {delta > 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2)}
                       </p>
                     )}
                   </div>
                   {isExpanded ? (
-                    <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+                    <ChevronUp className="h-4 w-4 text-slate-400" />
                   ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
                   )}
                 </div>
               </button>
 
               {isExpanded && (
-                <div className="border-t border-slate-100 px-3 py-2.5 space-y-2.5 text-xs">
+                <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3 space-y-2.5 text-xs">
                   <div className="grid grid-cols-4 gap-1.5 text-center tabular-nums">
-                    <div className="rounded-lg bg-slate-50 p-1.5 border border-slate-100">
-                      <p className="text-[10px] text-slate-500">ภัยคุกคาม</p>
-                      <p className="font-bold text-[#0F294A]">
-                        {item.hazardCompositeScore.toFixed(2)}
-                      </p>
+                    <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200/70">
+                      <p className="text-slate-500">ภัย</p>
+                      <p className="font-bold text-[#0C2340]">{item.hazardCompositeScore.toFixed(2)}</p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-1.5 border border-slate-100">
-                      <p className="text-[10px] text-slate-500">ล่อแหลม</p>
-                      <p className="font-bold text-[#0F294A]">{item.exposureScore.toFixed(2)}</p>
+                    <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200/70">
+                      <p className="text-slate-500">ล่อแหลม</p>
+                      <p className="font-bold text-[#0C2340]">{item.exposureScore.toFixed(2)}</p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-1.5 border border-slate-100">
-                      <p className="text-[10px] text-slate-500">เปราะบาง</p>
-                      <p className="font-bold text-[#0F294A]">
-                        {item.vulnerabilityScore.toFixed(2)}
-                      </p>
+                    <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200/70">
+                      <p className="text-slate-500">เปราะบาง</p>
+                      <p className="font-bold text-[#0C2340]">{item.vulnerabilityScore.toFixed(2)}</p>
                     </div>
-                    <div className="rounded-lg bg-teal-50 p-1.5 border border-teal-100">
-                      <p className="text-[10px] text-teal-800">ศักยภาพ</p>
+                    <div className="rounded-lg bg-teal-50 p-2 ring-1 ring-teal-200/70">
+                      <p className="text-teal-800">ศักยภาพ</p>
                       <p className="font-bold text-[#115E59]">{item.capacityScore.toFixed(2)}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold text-[#115E59]">
-                      ตัวชี้วัดศักยภาพรายอำเภอ (5 ด้าน)
-                    </p>
+                  <div className="space-y-1.5">
                     {CAPACITY_INDICATORS.map((ind) => {
                       const val = item.metrics.capacityIndicators[ind.id];
                       const st = CAPACITY_LEVEL_STYLES[scoreToRiskLevel(val)];
                       return (
-                        <div key={ind.id} className="flex items-center gap-2 text-[11px]">
+                        <div key={ind.id} className="flex items-center gap-2 text-xs">
                           <span className="w-36 truncate text-slate-600">{ind.shortNameTh}</span>
-                          <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-200/70 overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{
-                                width: `${(val / 5) * 100}%`,
-                                backgroundColor: st.mapFill,
-                              }}
+                              style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
                             />
                           </div>
-                          <span className="w-8 text-right font-semibold text-[#115E59] tabular-nums">
+                          <span className="w-9 text-right font-semibold text-[#115E59] tabular-nums">
                             {val.toFixed(2)}
                           </span>
                         </div>
@@ -248,30 +208,17 @@ export function ProvinceDistrictsTab({
                     })}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[10px] text-slate-500 tabular-nums">
-                    <span>
-                      ปรับปรุงครั้งที่ {item.version} | โดย {item.updatedBy}
-                    </span>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <RiskBadge level={item.ddpmLevel} size="sm" compact />
-                  </div>
-
-                  {canEditThisDistrict && (
                     <button
                       type="button"
-                      onClick={() => onOpenOfficerEdit(item.district.code)}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#0F294A] py-1.5 text-xs font-semibold text-white hover:bg-[#163A66]"
+                      onClick={() => onOpenDistrictEditor(item.district.code)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C2340] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#16355B] transition-colors"
                     >
                       <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-                      แก้ไขข้อมูล{item.district.fullNameTh}
+                      <span>กรอกคะแนนอำเภอนี้</span>
                     </button>
-                  )}
-
-                  {isOtherOfficerLocked && (
-                    <p className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] text-slate-600">
-                      <Lock className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-                      อ่านอย่างเดียว (บัญชีของท่านมีสิทธิ์แก้ไขเฉพาะ{authUser.districtNameTh}เท่านั้น)
-                    </p>
-                  )}
+                  </div>
                 </div>
               )}
             </div>

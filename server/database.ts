@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import districtsCatalogRaw from './data/thailand-districts.json' with { type: 'json' };
+import { THAILAND_DISTRICTS_CATALOG } from '../src/data/thailandDistrictsCatalog.ts';
 import { HAZARD_BY_ID, HAZARD_IDS } from '../src/data/hazardCatalog.ts';
 import {
   CAPACITY_INDICATORS,
@@ -24,10 +24,13 @@ import type {
   AuthUser,
   ChangeRequestRecord,
   DemoAccountInfo,
+  DistrictCatalogSummaryItem,
   DistrictEvaluation,
   DistrictMeta,
   DistrictMetricsPayload,
   MetricDiffItem,
+  ProvinceProgressItem,
+  ProvinceProgressResponse,
   ProvinceRiskRecord,
   ProvinceTrendPoint,
   ReportingPeriod,
@@ -42,6 +45,7 @@ import {
   randomTokenHex,
   resolveMasterKey,
   sha256Hex,
+  timingSafeStringEqual,
   verifyPassword,
   verifyTotp,
 } from './security.ts';
@@ -182,7 +186,7 @@ export const INITIAL_PERIODS: readonly Omit<ReportingPeriod, 'createdAt'>[] = [
 ];
 
 function loadDistrictsCatalog(): DistrictMeta[] {
-  return districtsCatalogRaw as DistrictMeta[];
+  return [...THAILAND_DISTRICTS_CATALOG];
 }
 
 export function computeMetricsDiff(
@@ -264,22 +268,34 @@ interface RawUserRow {
   locked_until: string | null;
 }
 
+export interface RiskDatabaseOptions {
+  readonly masterKey?: Buffer;
+  readonly journalMode?: 'WAL' | 'DELETE';
+}
+
 export class RiskDatabase {
   public readonly db: DatabaseSync;
+  public readonly dbPath: string;
   private readonly masterKey: Buffer;
   private readonly districtsByCode = new Map<string, DistrictMeta>();
   private readonly districtsByProvince = new Map<string, DistrictMeta[]>();
   private readonly provinceCache = new Map<string, { provinces: ProvinceRiskRecord[]; lastUpdatedAt: string }>();
+  private _mutationCount = 0;
 
-  constructor(dbPath: string = path.resolve(PROJECT_ROOT, 'data/ddpm_risk.sqlite')) {
+  constructor(
+    dbPath: string = path.resolve(PROJECT_ROOT, 'data/ddpm_risk.sqlite'),
+    options: RiskDatabaseOptions = {},
+  ) {
+    this.dbPath = dbPath;
     const isMemory = dbPath === ':memory:';
     if (!isMemory) {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     }
-    this.masterKey = resolveMasterKey(PROJECT_ROOT, isMemory);
+    this.masterKey = resolveMasterKey(PROJECT_ROOT, isMemory, options.masterKey);
     this.db = new DatabaseSync(dbPath);
     if (!isMemory) {
-      this.db.exec('PRAGMA journal_mode = WAL;');
+      const mode = options.journalMode ?? 'WAL';
+      this.db.exec(`PRAGMA journal_mode = ${mode};`);
     }
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec('PRAGMA busy_timeout = 5000;');
@@ -289,7 +305,25 @@ export class RiskDatabase {
     this.loadDistrictIndex();
   }
 
+  public get mutationCount(): number {
+    return this._mutationCount;
+  }
+
+  private markMutated(): void {
+    this._mutationCount += 1;
+  }
+
+  public checkpoint(): void {
+    if (this.dbPath === ':memory:') return;
+    try {
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch {
+      // โหมด DELETE ไม่จำเป็นต้องทำ WAL checkpoint
+    }
+  }
+
   public close(): void {
+    this.checkpoint();
     this.db.close();
   }
 
@@ -747,6 +781,8 @@ export class RiskDatabase {
         entryHash,
       );
 
+    this.markMutated();
+
     return {
       seq: Number(res.lastInsertRowid),
       createdAt,
@@ -1085,6 +1121,179 @@ export class RiskDatabase {
     return trend;
   }
 
+  public getDistrictsCatalogSummary(
+    periodId?: string,
+  ): { period: ReportingPeriod; districts: DistrictCatalogSummaryItem[] } | null {
+    const period = this.getPeriod(periodId);
+    if (!period) return null;
+
+    const pendingRows = this.db
+      .prepare(
+        `SELECT district_code, COUNT(*) AS cnt
+         FROM change_requests
+         WHERE period_id = ? AND status = 'pending'
+         GROUP BY district_code`,
+      )
+      .all(period.periodId) as Array<{ district_code: string; cnt: number }>;
+    const pendingMap = new Map<string, number>();
+    for (const pr of pendingRows) {
+      pendingMap.set(String(pr.district_code), Number(pr.cnt));
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT district_code, province_code, version, metrics_json, updated_by, updated_at
+         FROM district_period_metrics
+         WHERE period_id = ?
+         ORDER BY district_code ASC`,
+      )
+      .all(period.periodId);
+
+    const districts: DistrictCatalogSummaryItem[] = [];
+    for (const r of rows) {
+      const dCode = String(r.district_code);
+      const pCode = String(r.province_code);
+      const meta = this.districtsByCode.get(dCode);
+      const prov = PROVINCE_BY_CODE[pCode];
+      if (!meta || !prov) continue;
+      const metrics = JSON.parse(String(r.metrics_json)) as DistrictMetricsPayload;
+      const version = Number(r.version);
+      const updatedBy = String(r.updated_by);
+      const updatedAt = String(r.updated_at);
+      const ev = evaluateDistrictMetrics(meta, prov, period.periodId, version, metrics, updatedBy, updatedAt);
+
+      districts.push({
+        code: meta.code,
+        provinceCode: meta.provinceCode,
+        provinceNameTh: prov.nameTh,
+        prefixTh: meta.prefixTh,
+        nameTh: meta.nameTh,
+        fullNameTh: meta.fullNameTh,
+        nameEn: meta.nameEn,
+        geoClass: meta.geoClass,
+        ddpmScore: ev.ddpmScore,
+        ddpmLevel: ev.ddpmLevel,
+        capacityScore: ev.capacityScore,
+        version,
+        updatedAt,
+        pendingCount: pendingMap.get(dCode) ?? 0,
+        isModifiedFromBaseline: version > 1,
+      });
+    }
+
+    return { period, districts };
+  }
+
+  public searchDistricts(input: {
+    provinceCode?: string;
+    periodId?: string;
+    query?: string;
+    limit?: number;
+  }): { period: ReportingPeriod; districts: DistrictCatalogSummaryItem[] } | null {
+    const catalog = this.getDistrictsCatalogSummary(input.periodId);
+    if (!catalog) return null;
+
+    const q = (input.query ?? '').trim().toLowerCase();
+    const provCode = input.provinceCode?.trim();
+    const limit = Math.min(928, Math.max(1, input.limit ?? 100));
+
+    const filtered = catalog.districts.filter((d) => {
+      if (provCode && d.provinceCode !== provCode) return false;
+      if (!q) return true;
+      return (
+        d.fullNameTh.toLowerCase().includes(q) ||
+        d.nameTh.toLowerCase().includes(q) ||
+        d.provinceNameTh.toLowerCase().includes(q) ||
+        d.nameEn.toLowerCase().includes(q) ||
+        d.code.includes(q)
+      );
+    });
+
+    return {
+      period: catalog.period,
+      districts: filtered.slice(0, limit),
+    };
+  }
+
+  public getProvinceProgress(actor: AuthUser, periodId?: string): ProvinceProgressResponse | null {
+    const period = this.getPeriod(periodId);
+    if (!period) return null;
+
+    const targetProvinces =
+      actor.role === 'ddpm_central_admin'
+        ? PROVINCES_RISK_DATA
+        : actor.provinceCode && PROVINCE_BY_CODE[actor.provinceCode]
+          ? [PROVINCE_BY_CODE[actor.provinceCode]]
+          : [];
+
+    const versionRows = this.db
+      .prepare(
+        `SELECT province_code,
+                COUNT(*) AS total_cnt,
+                SUM(CASE WHEN version > 1 THEN 1 ELSE 0 END) AS updated_cnt
+         FROM district_period_metrics
+         WHERE period_id = ?
+         GROUP BY province_code`,
+      )
+      .all(period.periodId) as Array<{
+      province_code: string;
+      total_cnt: number;
+      updated_cnt: number;
+    }>;
+
+    const pendingRows = this.db
+      .prepare(
+        `SELECT province_code, COUNT(DISTINCT district_code) AS pending_cnt
+         FROM change_requests
+         WHERE period_id = ? AND status = 'pending'
+         GROUP BY province_code`,
+      )
+      .all(period.periodId) as Array<{ province_code: string; pending_cnt: number }>;
+
+    const vMap = new Map<string, { total: number; updated: number }>();
+    for (const r of versionRows) {
+      vMap.set(String(r.province_code), {
+        total: Number(r.total_cnt),
+        updated: Number(r.updated_cnt),
+      });
+    }
+    const pMap = new Map<string, number>();
+    for (const r of pendingRows) {
+      pMap.set(String(r.province_code), Number(r.pending_cnt));
+    }
+
+    const provinces: ProvinceProgressItem[] = [];
+    let totalDistricts = 0;
+    let updatedDistricts = 0;
+    let pendingDistricts = 0;
+
+    for (const p of targetProvinces) {
+      const counts = vMap.get(p.dopaCode) ?? { total: 0, updated: 0 };
+      const pend = pMap.get(p.dopaCode) ?? 0;
+      const pct = counts.total > 0 ? round2((counts.updated / counts.total) * 100) : 0;
+      provinces.push({
+        provinceCode: p.dopaCode,
+        provinceNameTh: p.nameTh,
+        totalDistricts: counts.total,
+        updatedDistricts: counts.updated,
+        pendingDistricts: pend,
+        completionPct: pct,
+      });
+      totalDistricts += counts.total;
+      updatedDistricts += counts.updated;
+      pendingDistricts += pend;
+    }
+
+    return {
+      periodId: period.periodId,
+      totalDistricts,
+      updatedDistricts,
+      pendingDistricts,
+      completionPct: totalDistricts > 0 ? round2((updatedDistricts / totalDistricts) * 100) : 0,
+      provinces,
+    };
+  }
+
   // ==================== Auth, Rate Limiting, TOTP 2FA & Sessions ====================
 
   public listDemoAccountsInfo(): DemoAccountInfo[] {
@@ -1180,6 +1389,102 @@ export class RiskDatabase {
     this.db.prepare('DELETE FROM login_rate_limits WHERE bucket_key = ?').run(bucketKey);
   }
 
+  /**
+   * สร้างบัญชีสาธิตแบบ Lazy Provisioning เฉพาะเมื่ออยู่ในโหมดสาธิต (demoMode=true และไม่ใช่ DDPM_STRICT_PROD)
+   * รองรับครบทั้ง 928 อำเภอ/เขต (am_XXXX) และ 77 จังหวัด (pv_XX)
+   * ตรวจรหัสผ่านแบบ Constant-Time ก่อนสร้างแถวเสมอเพื่อป้องกัน Brute-Force สร้างข้อมูลขยะ และห้ามสร้าง admin เด็ดขาด
+   */
+  private tryLazyProvisionDemoAccount(
+    username: string,
+    passwordRaw: string,
+    ipAddress: string,
+  ): RawUserRow | null {
+    const amMatch = username.match(/^am_(\d{4})$/);
+    if (amMatch) {
+      const distCode = amMatch[1];
+      const dist = this.districtsByCode.get(distCode);
+      if (!dist) return null;
+      const expectedPw = `Ddpm@${dist.code}#2569`;
+      if (!timingSafeStringEqual(passwordRaw, expectedPw)) return null;
+
+      const prov = PROVINCE_BY_CODE[dist.provinceCode];
+      const provLabel = prov ? (prov.dopaCode === '10' ? prov.nameTh : `จังหวัด${prov.nameTh}`) : dist.provinceCode;
+      const uid = `usr_${username}`;
+      const displayNameTh = `เจ้าหน้าที่ ปภ. ${dist.fullNameTh}`;
+      const positionTh = `เจ้าหน้าที่ป้องกันและบรรเทาสาธารณภัย ${dist.fullNameTh} ${provLabel}`;
+      const pwHash = hashPassword(expectedPw);
+      const totpSecret = generateTotpSecret();
+      const encSecret = encryptSecret(totpSecret, this.masterKey);
+      const nowIso = new Date().toISOString();
+
+      this.db
+        .prepare(
+          `INSERT INTO users (id, username, display_name_th, position_th, password_hash, role, province_code, district_code, totp_secret_enc, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, 'district_officer', ?, ?, ?, 1, ?)`,
+        )
+        .run(uid, username, displayNameTh, positionTh, pwHash, dist.provinceCode, dist.code, encSecret, nowIso);
+
+      this.markMutated();
+      this.appendAuditLog({
+        eventType: 'DEMO_ACCOUNT_PROVISIONED',
+        actorUserId: uid,
+        actorUsername: username,
+        actorRole: 'district_officer',
+        targetProvinceCode: dist.provinceCode,
+        targetDistrictCode: dist.code,
+        periodId: null,
+        ipAddress,
+        summaryTh: `เปิดใช้งานบัญชีสาธิตประจำพื้นที่ ${dist.fullNameTh} ${provLabel} (${username})`,
+        details: { role: 'district_officer', districtCode: dist.code },
+      });
+
+      return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as RawUserRow | undefined ?? null;
+    }
+
+    const pvMatch = username.match(/^pv_(\d{2})$/);
+    if (pvMatch) {
+      const provCode = pvMatch[1];
+      const prov = PROVINCE_BY_CODE[provCode];
+      if (!prov) return null;
+      const expectedPw = `Ddpm@Prov${prov.dopaCode}#2569`;
+      if (!timingSafeStringEqual(passwordRaw, expectedPw)) return null;
+
+      const provLabel = prov.dopaCode === '10' ? prov.nameTh : `จังหวัด${prov.nameTh}`;
+      const uid = `usr_${username}`;
+      const displayNameTh = `ผู้ตรวจสอบ ปภ. ${provLabel}`;
+      const positionTh = `หัวหน้าสำนักงานป้องกันและบรรเทาสาธารณภัย${provLabel}`;
+      const pwHash = hashPassword(expectedPw);
+      const totpSecret = generateTotpSecret();
+      const encSecret = encryptSecret(totpSecret, this.masterKey);
+      const nowIso = new Date().toISOString();
+
+      this.db
+        .prepare(
+          `INSERT INTO users (id, username, display_name_th, position_th, password_hash, role, province_code, district_code, totp_secret_enc, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, 'province_reviewer', ?, NULL, ?, 1, ?)`,
+        )
+        .run(uid, username, displayNameTh, positionTh, pwHash, prov.dopaCode, encSecret, nowIso);
+
+      this.markMutated();
+      this.appendAuditLog({
+        eventType: 'DEMO_ACCOUNT_PROVISIONED',
+        actorUserId: uid,
+        actorUsername: username,
+        actorRole: 'province_reviewer',
+        targetProvinceCode: prov.dopaCode,
+        targetDistrictCode: null,
+        periodId: null,
+        ipAddress,
+        summaryTh: `เปิดใช้งานบัญชีผู้ตรวจสอบระดับจังหวัด (สาธิต) ประจำ${provLabel} (${username})`,
+        details: { role: 'province_reviewer', provinceCode: prov.dopaCode },
+      });
+
+      return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as RawUserRow | undefined ?? null;
+    }
+
+    return null;
+  }
+
   public loginStep1Password(
     usernameRaw: string,
     passwordRaw: string,
@@ -1219,9 +1524,16 @@ export class RiskDatabase {
       };
     }
 
-    const userRow = this.db
+    let userRow = this.db
       .prepare('SELECT * FROM users WHERE username = ?')
       .get(username) as RawUserRow | undefined;
+
+    if (!userRow && demoMode && process.env.DDPM_STRICT_PROD !== 'true') {
+      const provisioned = this.tryLazyProvisionDemoAccount(username, passwordRaw, ipAddress);
+      if (provisioned) {
+        userRow = provisioned;
+      }
+    }
 
     if (userRow && userRow.locked_until && new Date(userRow.locked_until).getTime() > nowMs) {
       return {
@@ -1281,6 +1593,7 @@ export class RiskDatabase {
          VALUES (?, ?, ?, ?, ?)`,
       )
       .run(challengeHash, userRow.id, ipAddress, expIso, nowIso);
+    this.markMutated();
 
     const response: {
       ok: true;
@@ -1448,14 +1761,20 @@ export class RiskDatabase {
     if (!row || row.is_active !== 1) return null;
 
     const absExp = new Date(row.expires_at).getTime();
-    const idleExp = new Date(row.last_activity_at).getTime() + SESSION_IDLE_MS;
+    const lastActivityMs = new Date(row.last_activity_at).getTime();
+    const idleExp = lastActivityMs + SESSION_IDLE_MS;
     if (nowMs > absExp || nowMs > idleExp) {
       this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash);
+      this.markMutated();
       return null;
     }
 
-    const nowIso = new Date(nowMs).toISOString();
-    this.db.prepare('UPDATE sessions SET last_activity_at = ? WHERE token_hash = ?').run(nowIso, hash);
+    // ลดการเขียนซ้ำบนคำขออ่าน (GET) โดยอัปเดตเวลาใช้งานล่าสุดทุก 60 วินาที
+    if (nowMs - lastActivityMs >= 60_000) {
+      const nowIso = new Date(nowMs).toISOString();
+      this.db.prepare('UPDATE sessions SET last_activity_at = ? WHERE token_hash = ?').run(nowIso, hash);
+      this.markMutated();
+    }
 
     return {
       user: this.toAuthUser(row),
@@ -1756,6 +2075,27 @@ export class RiskDatabase {
         ok: false,
         status: 403,
         error: 'ไม่มีสิทธิ์อนุมัติหรือปฏิเสธคำขอของจังหวัดอื่น',
+      };
+    }
+
+    // Strict Maker-Checker Separation of Duties ทุกบทบาท: ห้ามผู้ส่งคำขออนุมัติคำขอของตนเอง
+    if (req.submittedByUserId === actor.id) {
+      this.appendAuditLog({
+        eventType: 'UNAUTHORIZED_SCOPE_ATTEMPT',
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actorRole: actor.role,
+        targetProvinceCode: req.provinceCode,
+        targetDistrictCode: req.districtCode,
+        periodId: req.periodId,
+        ipAddress,
+        summaryTh: `สกัดกั้นการอนุมัติคำขอของตนเองตามหลักตรวจสอบถ่วงดุล: ${actor.username} คำขอ #${req.id}`,
+        details: { requestId: req.id, selfApprovalBlocked: true },
+      });
+      return {
+        ok: false,
+        status: 403,
+        error: 'ผู้ส่งคำขอแก้ไขข้อมูลไม่สามารถอนุมัติคำขอของตนเองได้ กรุณาให้ผู้ตรวจสอบท่านอื่นพิจารณา',
       };
     }
 

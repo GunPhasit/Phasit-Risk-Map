@@ -11,6 +11,18 @@ export type UserRole = 'district_officer' | 'province_reviewer' | 'ddpm_central_
 
 export type DistrictGeoClass = 'metro' | 'coastal' | 'mountain' | 'river_basin' | 'rural';
 
+export type StorageMode = 'local-sqlite' | 'netlify-blobs-sqlite' | 'ephemeral-sqlite';
+
+export interface SystemHealthInfo {
+  readonly status: 'ok';
+  readonly engine: string;
+  readonly storageMode: StorageMode;
+  readonly provinces: number;
+  readonly districts: number;
+  readonly periods: number;
+  readonly demoMode: boolean;
+}
+
 export interface DistrictMeta {
   readonly code: string; // รหัสอำเภอ 4 หลัก มท. เช่น "5001", "1001"
   readonly provinceCode: string; // รหัสจังหวัด 2 หลัก เช่น "50", "10"
@@ -56,6 +68,42 @@ export interface DistrictEvaluation {
   readonly deltaFromPrevious: number | null;
   readonly updatedBy: string;
   readonly updatedAt: string;
+}
+
+export interface DistrictCatalogSummaryItem {
+  readonly code: string;
+  readonly provinceCode: string;
+  readonly provinceNameTh: string;
+  readonly prefixTh: string;
+  readonly nameTh: string;
+  readonly fullNameTh: string;
+  readonly nameEn: string;
+  readonly geoClass: DistrictGeoClass;
+  readonly ddpmScore: number;
+  readonly ddpmLevel: RiskLevel;
+  readonly capacityScore: number;
+  readonly version: number;
+  readonly updatedAt: string;
+  readonly pendingCount: number;
+  readonly isModifiedFromBaseline: boolean;
+}
+
+export interface ProvinceProgressItem {
+  readonly provinceCode: string;
+  readonly provinceNameTh: string;
+  readonly totalDistricts: number;
+  readonly updatedDistricts: number;
+  readonly pendingDistricts: number;
+  readonly completionPct: number;
+}
+
+export interface ProvinceProgressResponse {
+  readonly periodId: string;
+  readonly totalDistricts: number;
+  readonly updatedDistricts: number;
+  readonly pendingDistricts: number;
+  readonly completionPct: number;
+  readonly provinces: readonly ProvinceProgressItem[];
 }
 
 export interface ProvinceTrendPoint {
@@ -130,6 +178,7 @@ export interface ChangeRequestRecord {
 
 export type AuditEventType =
   | 'SYSTEM_GENESIS'
+  | 'DEMO_ACCOUNT_PROVISIONED'
   | 'LOGIN_SUCCESS'
   | 'LOGIN_FAILED'
   | 'LOGIN_LOCKED'

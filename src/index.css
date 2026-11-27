@@ -2,29 +2,42 @@
 
 @theme {
   --font-sans: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --color-gov-navy: #0F294A;
-  --color-gov-navy-light: #163A66;
+  --color-gov-navy: #0C2340;
+  --color-gov-navy-deep: #07172B;
+  --color-gov-navy-light: #16355B;
   --color-gov-blue: #1D4ED8;
-  --color-gov-gold: #D97706;
-  --color-map-ocean: #EAF2F8;
+  --color-gov-gold: #C89B3C;
+  --color-map-ocean: #EBF2F7;
+  --color-surface-canvas: #F6F7F9;
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
     scroll-behavior: smooth;
+    font-size: 16px;
   }
 
   body {
-    background-color: #F8FAFC;
+    background-color: #F6F7F9;
     color: #0F172A;
     font-feature-settings: "tnum" on;
+    line-height: 1.55;
   }
 
   :focus-visible {
     outline: 2px solid #1D4ED8;
     outline-offset: 2px;
   }
+}
+
+.gov-card {
+  background-color: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.85);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 3px rgba(12, 35, 64, 0.05),
+    0 8px 24px rgba(12, 35, 64, 0.03);
 }
 
 .tabular-nums {

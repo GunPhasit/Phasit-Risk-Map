@@ -7,23 +7,20 @@ import {
   FileClock,
   Flag,
   GitCompareArrows,
-  Info,
-  Map as MapIcon,
   MapPin,
   Phone,
   RotateCcw,
   Share2,
-  ShieldCheck,
   SlidersHorizontal,
   TrendingDown,
 } from 'lucide-react';
-import { CORE_HOTLINES, HAZARD_BY_ID, HAZARD_CATALOG } from '../../data/hazardCatalog';
+import { CORE_HOTLINES, HAZARD_BY_ID, HAZARD_CATALOG } from '../../data/hazardCatalog.ts';
 import {
   CAPACITY_INDICATORS,
   EXPOSURE_INDICATORS,
   SUB_INDICATOR_BY_ID,
   VULNERABILITY_INDICATORS,
-} from '../../data/indicatorCatalog';
+} from '../../data/indicatorCatalog.ts';
 import {
   CAPACITY_LEVEL_STYLES,
   getPaletteForDimension,
@@ -32,8 +29,8 @@ import {
   REGION6_LABELS,
   RISK_LEVEL_LIST,
   RISK_LEVEL_STYLES,
-} from '../../data/riskPalette';
-import { scoreToRiskLevel } from '../../domain/riskCalculator';
+} from '../../data/riskPalette.ts';
+import { scoreToRiskLevel } from '../../domain/riskCalculator.ts';
 import type {
   AuthUser,
   CapacityIndicatorId,
@@ -46,7 +43,7 @@ import type {
   ProvinceTrendPoint,
   SubIndicatorId,
 } from '../../types/index.ts';
-import { HazardIcon, RiskBadge } from '../common/RiskBadge';
+import { HazardIcon, RiskBadge } from '../common/RiskBadge.tsx';
 import { ProvinceDistrictsTab } from './ProvinceDistrictsTab.tsx';
 import { ProvinceTrendChart } from './ProvinceTrendChart.tsx';
 
@@ -69,13 +66,12 @@ interface ProvinceDetailPanelProps {
   onChangeLayer: (layer: LayerSelection) => void;
   onToggleCompare: (dopaCode: string) => void;
   onUpdateCapacityOverride: (dopaCode: string, overrides: CapacityOverrides | null) => void;
-  onOpenOfficerEdit: (districtCode: string) => void;
+  onOpenDistrictEditor: (provinceCode: string, districtCode?: string) => void;
   onOpenChangelog: () => void;
   onOpenReportModal: (provinceNameTh?: string) => void;
 }
 
-type DetailTab = 'hevc' | 'districts' | 'guidance' | 'governance';
-type PanelMode = 'baseline' | 'simulator';
+type DetailTab = 'overview' | 'districts' | 'simulate';
 
 export function ProvinceDetailPanel({
   evaluations,
@@ -96,13 +92,12 @@ export function ProvinceDetailPanel({
   onChangeLayer,
   onToggleCompare,
   onUpdateCapacityOverride,
-  onOpenOfficerEdit,
+  onOpenDistrictEditor,
   onOpenChangelog,
   onOpenReportModal,
 }: ProvinceDetailPanelProps) {
-  const [panelMode, setPanelMode] = useState<PanelMode>('baseline');
-  const [activeTab, setActiveTab] = useState<DetailTab>('hevc');
-  const [openAccordion, setOpenAccordion] = useState<'H' | 'E' | 'V' | 'C'>('C');
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [openAccordion, setOpenAccordion] = useState<'H' | 'E' | 'V' | 'C'>('H');
   const [copiedLink, setCopiedLink] = useState(false);
   const [guidanceHazardOverride, setGuidanceHazardOverride] = useState<HazardId | null>(null);
 
@@ -130,11 +125,6 @@ export function ProvinceDetailPanel({
       }
     }
 
-    const top6 = [...evaluations]
-      .filter((e) => e.score !== null)
-      .sort((a, b) => a.rank - b.rank)
-      .slice(0, 6);
-
     const n = Math.max(1, evaluations.length);
     return {
       counts,
@@ -143,7 +133,6 @@ export function ProvinceDetailPanel({
       avgE: sumE / n,
       avgV: sumV / n,
       avgC: sumC / n,
-      top6,
     };
   }, [evaluations]);
 
@@ -174,7 +163,7 @@ export function ProvinceDetailPanel({
     }
   };
 
-  // ==================== มุมมองเริ่มต้น: ภาพรวมระดับประเทศ ====================
+  // ==================== มุมมองเริ่มต้น: ภาพรวมประเทศแบบกระชับ ====================
   if (!selectedEvaluation) {
     const dimMeta = MAP_DIMENSION_META[activeDimension];
     const subTitle =
@@ -182,75 +171,72 @@ export function ProvinceDetailPanel({
         ? SUB_INDICATOR_BY_ID[activeSubIndicator].nameTh
         : activeDimension === 'R' || activeDimension === 'H'
           ? activeLayer === 'composite'
-            ? `${dimMeta.nameTh} (ภาพรวม 10 สาธารณภัย)`
+            ? `${dimMeta.nameTh} (รวม 10 ภัย)`
             : `${dimMeta.nameTh}: ${HAZARD_BY_ID[activeLayer].nameTh}`
           : dimMeta.nameTh;
 
     return (
       <aside
         aria-label="สรุปภาพรวมความเสี่ยงสาธารณภัยระดับประเทศ"
-        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"
+        className="gov-card flex flex-col gap-4 p-5"
       >
-        <div className="border-b border-slate-100 pb-3">
-          <p className="text-xs font-semibold tracking-wide text-[#1D4ED8]">
-            ภาพรวมระดับประเทศ (77 จังหวัด)
+        <div className="border-b border-slate-100 pb-3.5">
+          <p className="text-xs font-semibold text-[#1D4ED8]">
+            ภาพรวม 77 จังหวัด • {activePeriodLabelTh}
           </p>
-          <h2 className="mt-0.5 text-base font-semibold text-[#0F294A] leading-snug">
-            {subTitle}
-          </h2>
-          <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-            ความเสี่ยงสุทธิประเมินจาก <strong>ภัยคุกคาม</strong> <strong>ความล่อแหลม</strong> และ{' '}
-            <strong>ความเปราะบาง</strong> โดยมี <strong>ศักยภาพของพื้นที่</strong> ช่วยลดความเสี่ยง
-            เลือกจังหวัดบนแผนที่เพื่อดูรายละเอียดและจำลองแผนเพิ่มศักยภาพ
+          <h2 className="mt-1 text-lg font-bold text-[#0C2340] leading-snug">{subTitle}</h2>
+          <p className="mt-1.5 text-[13px] text-slate-600 leading-relaxed">
+            เลือกจังหวัดบนแผนที่เพื่อดูองค์ประกอบ 4 ปัจจัย รายอำเภอ และจำลองแผนเพิ่มศักยภาพ
           </p>
         </div>
 
-        {/* แถบคะแนนเฉลี่ยระดับประเทศทั้ง 4 ปัจจัย */}
-        <div className="grid grid-cols-4 gap-1.5 text-center">
-          {(
-            [
-              { dim: 'H' as const, label: 'ภัยคุกคาม', val: nationalSummary.avgH, isCap: false },
-              { dim: 'E' as const, label: 'ความล่อแหลม', val: nationalSummary.avgE, isCap: false },
-              { dim: 'V' as const, label: 'ความเปราะบาง', val: nationalSummary.avgV, isCap: false },
-              { dim: 'C' as const, label: 'ศักยภาพ', val: nationalSummary.avgC, isCap: true },
-            ] as const
-          ).map((box) => {
-            const active = activeDimension === box.dim;
-            return (
-              <button
-                key={box.dim}
-                type="button"
-                onClick={() => onChangeDimension(box.dim, null)}
-                className={`rounded-xl border p-2 transition-all ${
-                  active
-                    ? box.isCap
-                      ? 'border-[#0F766E] bg-teal-50 ring-1 ring-[#0F766E]'
-                      : 'border-[#0F294A] bg-blue-50/70 ring-1 ring-[#0F294A]'
-                    : box.isCap
-                      ? 'border-teal-200 bg-teal-50/40 hover:bg-teal-50'
-                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100'
-                }`}
-              >
-                <p className="text-[10px] font-semibold text-slate-600">{box.label}</p>
-                <p
-                  className={`mt-0.5 text-sm font-bold tabular-nums ${
-                    box.isCap ? 'text-[#0F766E]' : 'text-[#0F294A]'
+        {/* ค่าเฉลี่ย 4 ปัจจัยหลัก */}
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2">ค่าเฉลี่ยระดับประเทศทั้ง 4 ปัจจัย</p>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {(
+              [
+                { dim: 'H' as const, label: 'ภัยคุกคาม', val: nationalSummary.avgH, isCap: false },
+                { dim: 'E' as const, label: 'ล่อแหลม', val: nationalSummary.avgE, isCap: false },
+                { dim: 'V' as const, label: 'เปราะบาง', val: nationalSummary.avgV, isCap: false },
+                { dim: 'C' as const, label: 'ศักยภาพ', val: nationalSummary.avgC, isCap: true },
+              ] as const
+            ).map((box) => {
+              const active = activeDimension === box.dim;
+              return (
+                <button
+                  key={box.dim}
+                  type="button"
+                  onClick={() => onChangeDimension(box.dim, null)}
+                  className={`rounded-xl p-2.5 transition-all ${
+                    active
+                      ? box.isCap
+                        ? 'bg-teal-50 ring-2 ring-[#0D9488]'
+                        : 'bg-blue-50/70 ring-2 ring-[#0C2340]'
+                      : box.isCap
+                        ? 'bg-teal-50/50 ring-1 ring-teal-200/80 hover:bg-teal-50'
+                        : 'bg-slate-50 ring-1 ring-slate-200/80 hover:bg-slate-100'
                   }`}
                 >
-                  {box.val.toFixed(2)}
-                </p>
-              </button>
-            );
-          })}
+                  <p className="text-xs font-medium text-slate-600">{box.label}</p>
+                  <p
+                    className={`mt-1 text-base font-bold tabular-nums ${
+                      box.isCap ? 'text-[#0D9488]' : 'text-[#0C2340]'
+                    }`}
+                  >
+                    {box.val.toFixed(2)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* จำนวนจังหวัดแยกตาม 5 ระดับ */}
         <div>
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-700">
-              {isCapacityMode
-                ? 'จำนวนจังหวัดแยกตามระดับศักยภาพ'
-                : 'จำนวนจังหวัดแยกตามระดับคะแนน'}
+              {isCapacityMode ? 'การกระจายตัวตามระดับศักยภาพ' : 'การกระจายตัวตามระดับคะแนน'}
             </span>
             <span className="text-slate-500 tabular-nums">
               เฉลี่ย {nationalSummary.avgScore.toFixed(2)} / 5.00
@@ -262,14 +248,11 @@ export function ProvinceDetailPanel({
               return (
                 <div
                   key={lvl}
-                  className="flex flex-col items-center rounded-xl border p-2 text-center"
-                  style={{
-                    backgroundColor: style.tintBg,
-                    borderColor: style.tintBorder,
-                  }}
+                  className="flex flex-col items-center rounded-xl p-2 text-center"
+                  style={{ backgroundColor: style.tintBg }}
                 >
                   <span
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold"
                     style={{
                       backgroundColor: style.mapFill,
                       color: isCapacityMode && lvl <= 3 ? '#0F172A' : style.badgeText,
@@ -281,7 +264,7 @@ export function ProvinceDetailPanel({
                   <span className="mt-1 text-base font-bold text-slate-900 tabular-nums leading-none">
                     {nationalSummary.counts[lvl]}
                   </span>
-                  <span className="mt-1 text-[10px] font-medium text-slate-700 leading-tight">
+                  <span className="mt-1 text-xs font-medium text-slate-700 leading-tight">
                     {style.shortLabelTh}
                   </span>
                 </div>
@@ -290,94 +273,52 @@ export function ProvinceDetailPanel({
           </div>
         </div>
 
-        {/* 6 อันดับแรก */}
-        <div className="border-t border-slate-100 pt-3">
-          <h3 className="text-xs font-semibold text-slate-700 mb-2">
-            {isCapacityMode
-              ? '6 จังหวัดที่มีศักยภาพสูงสุด'
-              : '6 จังหวัดที่มีคะแนนสูงสุด'}
-          </h3>
-          <ul className="space-y-1.5">
-            {nationalSummary.top6.map((ev) => {
-              const style = ev.level !== null ? palette[ev.level] : null;
-              return (
-                <li key={ev.province.dopaCode}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectProvince(ev.province.dopaCode)}
-                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 text-left hover:border-slate-300 hover:bg-slate-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-5 text-xs font-bold text-slate-500 tabular-nums">
-                        {ev.rank}.
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">
-                          {ev.province.nameTh}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-500 tabular-nums">
-                          {REGION6_LABELS[ev.province.region6]} | ภัย {ev.breakdown.hazardCompositeScore.toFixed(1)} ศักยภาพ{' '}
-                          {ev.breakdown.effectiveCapacityScore.toFixed(1)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-bold text-[#0F294A] tabular-nums">
-                        {ev.score?.toFixed(2)}
-                      </span>
-                      {style && (
-                        <span
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-bold"
-                          style={{
-                            backgroundColor: style.mapFill,
-                            color: isCapacityMode && ev.level! <= 3 ? '#0F172A' : style.badgeText,
-                          }}
-                          aria-label={`ระดับ ${ev.level}`}
-                        >
-                          {style.symbol}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+        {/* ทางลัดกรอกคะแนนรายอำเภอ */}
+        <div className="rounded-xl bg-[#0C2340] p-4 text-white space-y-2">
+          <p className="text-sm font-semibold">กรอกและประเมินคะแนนรายอำเภอทั้งประเทศ</p>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            ครบทั้ง 928 อำเภอ/เขต ใน 77 จังหวัด ปรับคะแนนตัวแปรครบ 23 รายการ และดูผลรวมระดับจังหวัดได้ทันที
+          </p>
+          <button
+            type="button"
+            onClick={() => onOpenDistrictEditor('50')}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-[#0C2340] hover:bg-slate-100 transition-colors"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>เปิดหน้ากรอกคะแนน 928 อำเภอ/เขต</span>
+          </button>
         </div>
 
         {/* สายด่วน 24 ชม. */}
-        <div className="mt-auto rounded-xl border border-blue-100 bg-blue-50/70 p-3">
-          <p className="text-xs font-semibold text-[#0F294A] mb-1.5">
-            สายด่วนแจ้งเหตุสาธารณภัยตลอด 24 ชั่วโมง
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {CORE_HOTLINES.map((h) => (
-              <a
-                key={h.number}
-                href={`tel:${h.number}`}
-                className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-2.5 py-2 hover:bg-blue-50 transition-colors"
-              >
-                <Phone className="h-4 w-4 text-[#1D4ED8] shrink-0" aria-hidden="true" />
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-[#0F294A] tabular-nums leading-none">
-                    {h.number}
-                  </p>
-                  <p className="truncate text-[10px] text-slate-600 mt-0.5">{h.agency}</p>
-                </div>
-              </a>
-            ))}
-          </div>
+        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+          {CORE_HOTLINES.map((h) => (
+            <a
+              key={h.number}
+              href={`tel:${h.number}`}
+              className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200/80 hover:bg-blue-50/60 transition-colors"
+            >
+              <Phone className="h-4 w-4 text-[#1D4ED8] shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-[#0C2340] tabular-nums leading-none">
+                  {h.number}
+                </p>
+                <p className="truncate text-xs text-slate-600 mt-0.5">{h.agency}</p>
+              </div>
+            </a>
+          ))}
         </div>
       </aside>
     );
   }
 
-  // ==================== มุมมองเจาะลึกรายจังหวัด (HEVC + What-If Simulator) ====================
+  // ==================== มุมมองเจาะลึกรายจังหวัด (กระชับ 3 แท็บ) ====================
   const province = selectedEvaluation.province;
   const provinceTitle = province.dopaCode === '10' ? province.nameTh : `จังหวัด${province.nameTh}`;
   const isCompared = compareCodes.includes(province.dopaCode);
   const compareFull = compareCodes.length >= 3 && !isCompared;
   const bd = selectedEvaluation.breakdown;
+  const heroScore = bd.ddpmScore;
+  const heroLevel = heroScore !== null ? scoreToRiskLevel(heroScore) : null;
 
   const sortedHazards = [...HAZARD_CATALOG].sort((a, b) => {
     const sa = province.hazards[a.id].score;
@@ -418,1001 +359,678 @@ export function ProvinceDetailPanel({
     });
   };
 
+  const unit = province.dopaCode === '10' ? 'เขต' : 'อำเภอ';
+
   return (
     <aside
       aria-label={`ข้อมูลความเสี่ยงเจาะลึก ${provinceTitle}`}
-      className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden"
+      className="gov-card flex flex-col overflow-hidden"
     >
-      {/* ส่วนหัวคงที่: ชื่อจังหวัด + แถบสลับ ค่าฐานจำลอง / โหมดจำลองสถานการณ์ */}
-      <div className="border-b border-slate-200 bg-slate-50/80 p-4 space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={() => {
-                setGuidanceHazardOverride(null);
-                setPanelMode('baseline');
-                onSelectProvince(null);
-              }}
-              className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-[#1D4ED8] hover:underline"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              กลับสู่ภาพรวมประเทศ
-            </button>
-            <h2 className="text-lg font-bold text-[#0F294A] leading-tight">{provinceTitle}</h2>
-            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-600 tabular-nums">
-              <MapPin className="h-3 w-3 text-slate-400" aria-hidden="true" />
-              <span>
-                {REGION6_LABELS[province.region6]} (อันดับที่ {selectedEvaluation.rank} จาก 77 จังหวัด)
-              </span>
-            </p>
-          </div>
-
+      {/* ส่วนหัวจังหวัดแบบกระชับ */}
+      <div className="border-b border-slate-100 px-4 pt-3.5 pb-3 space-y-3">
+        <div className="flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={handleCopyShareLink}
-            title="คัดลอกลิงก์หน้าจังหวัดนี้"
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            onClick={() => {
+              setGuidanceHazardOverride(null);
+              setActiveTab('overview');
+              onSelectProvince(null);
+            }}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D4ED8] hover:underline"
           >
-            {copiedLink ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-green-700" aria-hidden="true" />
-                <span className="text-green-800">คัดลอกแล้ว</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>แชร์</span>
-              </>
-            )}
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>ภาพรวมประเทศ</span>
           </button>
-        </div>
 
-        {/* ปุ่มสลับ 2 โหมด: ค่าฐานจำลอง vs จำลองเพิ่มศักยภาพ */}
-        <div
-          role="group"
-          aria-label="สลับระหว่างค่าฐานจำลองกับโหมดจำลองเพิ่มศักยภาพ"
-          className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1 text-xs font-semibold"
-        >
-          <button
-            type="button"
-            onClick={() => setPanelMode('baseline')}
-            aria-pressed={panelMode === 'baseline'}
-            className={`rounded-lg py-1.5 transition-all ${
-              panelMode === 'baseline'
-                ? 'bg-white text-[#0F294A] shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            ค่าฐานจำลอง
-          </button>
-          <button
-            type="button"
-            onClick={() => setPanelMode('simulator')}
-            aria-pressed={panelMode === 'simulator'}
-            className={`inline-flex items-center justify-center gap-1 rounded-lg py-1.5 transition-all ${
-              panelMode === 'simulator'
-                ? 'bg-[#0F766E] text-white shadow-xs'
-                : 'text-teal-900 hover:bg-teal-50/70'
-            }`}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>จำลองเพิ่มศักยภาพ</span>
-            {bd.isSimulated && (
-              <span className="ml-0.5 h-2 w-2 rounded-full bg-amber-300" aria-hidden="true" />
-            )}
-          </button>
-        </div>
-
-        {/* องค์ประกอบความเสี่ยง 4 ปัจจัย คลิกแต่ละกล่องเพื่อสลับมิติบนแผนที่ */}
-        <div
-          className="rounded-xl border border-slate-200 bg-white p-2.5"
-          title="คลิกแต่ละปัจจัยเพื่อแสดงผลบนแผนที่ 77 จังหวัด"
-        >
-          <div className="mb-1.5 flex items-center justify-between text-[11px]">
-            <span className="font-semibold text-[#0F294A]">องค์ประกอบความเสี่ยง 4 ปัจจัย</span>
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               disabled={compareFull}
               onClick={() => onToggleCompare(province.dopaCode)}
-              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                 isCompared
                   ? 'border-violet-600 bg-violet-600 text-white'
                   : compareFull
                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <GitCompareArrows className="h-3 w-3" aria-hidden="true" />
-              <span>{isCompared ? `เทียบ (${compareCodes.length}/3)` : `+ เทียบ (${compareCodes.length}/3)`}</span>
+              <GitCompareArrows className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{isCompared ? `เทียบ (${compareCodes.length}/3)` : 'เทียบ'}</span>
             </button>
-          </div>
-
-          <div className="grid grid-cols-5 gap-1 text-center">
-            {(
-              [
-                {
-                  dim: 'H' as const,
-                  label: 'ภัยคุกคาม',
-                  val: bd.hazardActiveScore ?? bd.hazardCompositeScore,
-                  sign: '↑ เพิ่ม',
-                  isCap: false,
-                },
-                {
-                  dim: 'E' as const,
-                  label: 'ล่อแหลม',
-                  val: bd.exposureScore,
-                  sign: '↑ เพิ่ม',
-                  isCap: false,
-                },
-                {
-                  dim: 'V' as const,
-                  label: 'เปราะบาง',
-                  val: bd.vulnerabilityScore,
-                  sign: '↑ เพิ่ม',
-                  isCap: false,
-                },
-                {
-                  dim: 'C' as const,
-                  label: 'ศักยภาพ',
-                  val: bd.effectiveCapacityScore,
-                  sign: '↓ ลดเสี่ยง',
-                  isCap: true,
-                },
-              ] as const
-            ).map((item) => {
-              const lvl = scoreToRiskLevel(item.val);
-              const st = item.isCap ? CAPACITY_LEVEL_STYLES[lvl] : RISK_LEVEL_STYLES[lvl];
-              const isAct = activeDimension === item.dim;
-              return (
-                <button
-                  key={item.dim}
-                  type="button"
-                  onClick={() => {
-                    onChangeDimension(item.dim, null);
-                    setOpenAccordion(item.dim);
-                  }}
-                  className={`rounded-lg border p-1.5 transition-all ${
-                    isAct ? 'ring-2 ring-[#0F294A]' : 'hover:opacity-90'
-                  }`}
-                  style={{ backgroundColor: st.tintBg, borderColor: st.tintBorder }}
-                >
-                  <p className="text-[10px] font-semibold text-slate-700 leading-none">{item.label}</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900 tabular-nums leading-none">
-                    {item.val.toFixed(2)}
-                  </p>
-                  <p className="mt-0.5 text-[9px] font-semibold" style={{ color: st.tintText }}>
-                    {item.sign}
-                  </p>
-                </button>
-              );
-            })}
-
-            {/* กล่องผลลัพธ์ R สุทธิ */}
             <button
               type="button"
-              onClick={() => onChangeDimension('R', null)}
-              className={`rounded-lg border p-1.5 transition-all ${
-                activeDimension === 'R' ? 'ring-2 ring-[#0F294A]' : ''
-              }`}
-              style={{
-                backgroundColor:
-                  bd.ddpmScore !== null
-                    ? RISK_LEVEL_STYLES[scoreToRiskLevel(bd.ddpmScore)].badgeBg
-                    : NA_RISK_STYLE.badgeBg,
-                color:
-                  bd.ddpmScore !== null
-                    ? RISK_LEVEL_STYLES[scoreToRiskLevel(bd.ddpmScore)].badgeText
-                    : NA_RISK_STYLE.badgeText,
-                borderColor: 'transparent',
-              }}
+              onClick={handleCopyShareLink}
+              title="คัดลอกลิงก์หน้าจังหวัดนี้"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
-              <p className="text-[10px] font-semibold leading-none opacity-90">เสี่ยงสุทธิ</p>
-              <p className="mt-1 text-sm font-extrabold tabular-nums leading-none">
-                {bd.ddpmScore !== null ? bd.ddpmScore.toFixed(2) : 'N/A'}
-              </p>
-              <p className="mt-0.5 text-[9px] font-semibold opacity-95">
-                {bd.ddpmScore !== null ? `ระดับ ${scoreToRiskLevel(bd.ddpmScore)}` : 'N/A'}
-              </p>
+              {copiedLink ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                  <span className="text-emerald-800">คัดลอกแล้ว</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>แชร์</span>
+                </>
+              )}
             </button>
           </div>
+        </div>
+
+        {/* แถวชื่อจังหวัด + คะแนนความเสี่ยงสุทธิ */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-[#0C2340] leading-tight truncate">
+              {provinceTitle}
+            </h2>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 tabular-nums">
+              <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+              <span>
+                {REGION6_LABELS[province.region6]} • อันดับ {selectedEvaluation.rank}/77
+              </span>
+            </p>
+          </div>
+
+          <div className="flex flex-col items-end shrink-0 tabular-nums">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-2xl font-bold text-[#0C2340] leading-none">
+                {heroScore !== null ? heroScore.toFixed(2) : 'N/A'}
+              </span>
+              <span className="text-xs text-slate-400">/ 5</span>
+            </div>
+            <div className="mt-1">
+              <RiskBadge level={heroLevel} variant="solid" size="sm" compact />
+            </div>
+          </div>
+        </div>
+
+        {/* แถบ 4 ปัจจัย H/E/V/C แบบเรียบ (คลิกสลับมิติบนแผนที่ได้ทันที) */}
+        <div className="grid grid-cols-4 gap-1.5 text-center">
+          {(
+            [
+              {
+                dim: 'H' as const,
+                label: 'ภัยคุกคาม',
+                val: bd.hazardActiveScore ?? bd.hazardCompositeScore,
+                isCap: false,
+              },
+              { dim: 'E' as const, label: 'ล่อแหลม', val: bd.exposureScore, isCap: false },
+              { dim: 'V' as const, label: 'เปราะบาง', val: bd.vulnerabilityScore, isCap: false },
+              {
+                dim: 'C' as const,
+                label: 'ศักยภาพ',
+                val: bd.effectiveCapacityScore,
+                isCap: true,
+              },
+            ] as const
+          ).map((item) => {
+            const lvl = scoreToRiskLevel(item.val);
+            const st = item.isCap ? CAPACITY_LEVEL_STYLES[lvl] : RISK_LEVEL_STYLES[lvl];
+            const isAct = activeDimension === item.dim;
+            return (
+              <button
+                key={item.dim}
+                type="button"
+                onClick={() => {
+                  onChangeDimension(item.dim, null);
+                  setOpenAccordion(item.dim);
+                  setActiveTab('overview');
+                }}
+                className={`rounded-xl px-2 py-2 transition-all ${
+                  isAct ? 'ring-2 ring-[#0C2340]' : 'hover:opacity-90'
+                }`}
+                style={{ backgroundColor: st.tintBg }}
+              >
+                <p className="text-xs font-medium text-slate-600 leading-none">{item.label}</p>
+                <p className="mt-1 text-sm font-bold text-slate-900 tabular-nums leading-none">
+                  {item.val.toFixed(2)}
+                </p>
+                <div className="mt-1.5 h-1 w-full rounded-full bg-white/70 overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${(item.val / 5) * 100}%`, backgroundColor: st.mapFill }}
+                  />
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ==================== โหมดจำลองแผนเพิ่มศักยภาพ ==================== */}
-      {panelMode === 'simulator' ? (
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 max-h-[560px]">
-          <div className="rounded-xl border border-teal-300 bg-teal-50/80 p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#0F766E] px-2.5 py-0.5 text-[11px] font-bold text-white">
-                <SlidersHorizontal className="h-3 w-3" aria-hidden="true" />
-                จำลองแผนเพิ่มศักยภาพ
-              </span>
-              {bd.isSimulated && (
+      {/* 3 แท็บกระชับ: ภาพรวม | รายอำเภอ | จำลองแผน */}
+      <div
+        role="tablist"
+        aria-label="หมวดข้อมูลรายละเอียดจังหวัด"
+        className="grid grid-cols-3 border-b border-slate-200 bg-slate-50/70"
+      >
+        {(
+          [
+            { id: 'overview' as const, label: 'ภาพรวม' },
+            {
+              id: 'districts' as const,
+              label:
+                provinceDistricts.length > 0
+                  ? `ราย${unit} (${provinceDistricts.length})`
+                  : `ราย${unit}`,
+            },
+            {
+              id: 'simulate' as const,
+              label: bd.isSimulated ? 'จำลองแผน •' : 'จำลองแผน',
+            },
+          ] as const
+        ).map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.id)}
+              className={`border-b-2 px-2 py-2.5 text-xs sm:text-[13px] font-semibold transition-colors tabular-nums ${
+                active
+                  ? tab.id === 'simulate'
+                    ? 'border-[#0D9488] text-[#0D9488] bg-white'
+                    : 'border-[#0C2340] text-[#0C2340] bg-white'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* เนื้อหาภายในแท็บ (สูงสมดุลกับแผนที่) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3.5 max-h-[520px]">
+        {activeTab === 'overview' && (
+          <>
+            <p className="text-[13px] leading-relaxed text-slate-700">
+              {selectedEvaluation.summaryTh}
+            </p>
+
+            {/* ปุ่มเข้าสู่หน้ากรอกคะแนนรายอำเภอของจังหวัดนี้ */}
+            <button
+              type="button"
+              onClick={() => onOpenDistrictEditor(province.dopaCode)}
+              className="flex w-full items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 px-3.5 py-2.5 text-xs font-semibold text-[#115E59] hover:bg-teal-100/70 transition-colors"
+            >
+              <span>กรอกหรือปรับคะแนนตัวแปรราย{unit}ของ{provinceTitle}</span>
+              <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+            </button>
+
+            {/* Accordion 4 ปัจจัยแบบไร้กรอบซ้อน (เปิดทีละหมวด) */}
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-200/80 bg-white overflow-hidden">
+              {/* ภัยคุกคาม 10 ประเภท */}
+              <div>
                 <button
                   type="button"
-                  onClick={() => onUpdateCapacityOverride(province.dopaCode, null)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-teal-400 bg-white px-2 py-1 text-[11px] font-semibold text-teal-900 hover:bg-teal-100"
+                  onClick={() => setOpenAccordion(openAccordion === 'H' ? 'C' : 'H')}
+                  aria-expanded={openAccordion === 'H'}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
                 >
-                  <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                  คืนค่าเริ่มต้น
+                  <span className="text-[13px] font-semibold text-[#0C2340]">
+                    ภัยคุกคาม 10 ประเภท
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#0C2340] tabular-nums">
+                    {bd.hazardCompositeScore.toFixed(2)}
+                    {openAccordion === 'H' ? (
+                      <ChevronUp className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    )}
+                  </span>
                 </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg bg-white p-2 border border-teal-100">
-                <p className="text-[10px] text-slate-500">ความเสี่ยงเดิม</p>
-                <p className="text-base font-bold text-slate-800 tabular-nums">
-                  {bd.baseDdpmScore !== null ? bd.baseDdpmScore.toFixed(2) : 'N/A'}
-                </p>
-                {bd.baseDdpmScore !== null && (
-                  <RiskBadge
-                    level={scoreToRiskLevel(bd.baseDdpmScore)}
-                    variant="tinted"
-                    size="sm"
-                    compact
-                  />
+                {openAccordion === 'H' && (
+                  <div className="border-t border-slate-100 px-3.5 py-2.5 space-y-2">
+                    {sortedHazards.map((h) => {
+                      const entry = province.hazards[h.id];
+                      const lvl = entry.score !== null ? scoreToRiskLevel(entry.score) : null;
+                      const barColor =
+                        lvl !== null ? RISK_LEVEL_STYLES[lvl].mapFill : NA_RISK_STYLE.mapFill;
+                      const isSel = activeLayer === h.id && (activeDimension === 'R' || activeDimension === 'H');
+                      return (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => onChangeLayer(h.id)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors ${
+                            isSel ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <HazardIcon layer={h.id} className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                          <span className="w-28 truncate text-xs font-medium text-slate-800">
+                            {h.shortNameTh}
+                          </span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            {entry.score !== null && (
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${(entry.score / 5) * 100}%`, backgroundColor: barColor }}
+                              />
+                            )}
+                          </div>
+                          <span className="w-10 text-right text-xs font-bold text-slate-900 tabular-nums">
+                            {entry.score !== null ? entry.score.toFixed(2) : 'N/A'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
-              <div className="rounded-lg bg-white p-2 border border-teal-200 ring-1 ring-teal-300">
-                <p className="text-[10px] font-semibold text-teal-900">ความเสี่ยงหลังปรับแผน</p>
-                <p className="text-base font-extrabold text-[#0F294A] tabular-nums">
-                  {bd.ddpmScore !== null ? bd.ddpmScore.toFixed(2) : 'N/A'}
-                </p>
-                {bd.ddpmScore !== null && (
-                  <RiskBadge
-                    level={scoreToRiskLevel(bd.ddpmScore)}
-                    variant="solid"
-                    size="sm"
-                    compact
-                  />
+              {/* ศักยภาพ 5 ตัวชี้วัด */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setOpenAccordion(openAccordion === 'C' ? 'H' : 'C')}
+                  aria-expanded={openAccordion === 'C'}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-teal-50/40"
+                >
+                  <span className="text-[13px] font-semibold text-[#115E59]">
+                    ศักยภาพความพร้อม (5 ตัวชี้วัด)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#115E59] tabular-nums">
+                    {bd.effectiveCapacityScore.toFixed(2)}
+                    {openAccordion === 'C' ? (
+                      <ChevronUp className="h-4 w-4 text-teal-600" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-teal-600" />
+                    )}
+                  </span>
+                </button>
+                {openAccordion === 'C' && (
+                  <div className="border-t border-slate-100 px-3.5 py-2.5 space-y-2">
+                    {CAPACITY_INDICATORS.map((ind) => {
+                      const val = bd.effectiveCapacityIndicators[ind.id];
+                      const st = CAPACITY_LEVEL_STYLES[scoreToRiskLevel(val)];
+                      const activeSub = activeDimension === 'C' && activeSubIndicator === ind.id;
+                      return (
+                        <button
+                          key={ind.id}
+                          type="button"
+                          onClick={() => onChangeDimension('C', ind.id)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors ${
+                            activeSub ? 'bg-teal-50 ring-1 ring-teal-300' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="w-36 truncate text-xs font-medium text-slate-800">
+                            {ind.shortNameTh}
+                          </span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs font-bold text-[#115E59] tabular-nums">
+                            {val.toFixed(2)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
-              <div className="rounded-lg bg-white p-2 border border-teal-100 flex flex-col justify-center">
-                <p className="text-[10px] text-slate-500">ผลต่างความเสี่ยง</p>
-                <p
-                  className={`text-sm font-bold tabular-nums flex items-center justify-center gap-0.5 ${
-                    bd.simulationDeltaR < 0
-                      ? 'text-emerald-700'
-                      : bd.simulationDeltaR > 0
-                        ? 'text-rose-700'
-                        : 'text-slate-600'
-                  }`}
+              {/* ความล่อแหลม 4 ตัวชี้วัด */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setOpenAccordion(openAccordion === 'E' ? 'H' : 'E')}
+                  aria-expanded={openAccordion === 'E'}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
                 >
-                  {bd.simulationDeltaR < 0 && <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />}
-                  {bd.simulationDeltaR > 0 ? '+' : ''}
-                  {bd.simulationDeltaR.toFixed(2)}
-                </p>
-                <p className="text-[10px] text-slate-600 tabular-nums">
-                  {bd.simulationReductionPct > 0
-                    ? `ลดลง ${bd.simulationReductionPct.toFixed(1)}%`
-                    : bd.simulationReductionPct < 0
-                      ? `เพิ่มขึ้น ${Math.abs(bd.simulationReductionPct).toFixed(1)}%`
-                      : 'เท่าค่าฐาน'}
-                </p>
+                  <span className="text-[13px] font-semibold text-[#0C2340]">
+                    ความล่อแหลม (4 ตัวชี้วัด)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#0C2340] tabular-nums">
+                    {bd.exposureScore.toFixed(2)}
+                    {openAccordion === 'E' ? (
+                      <ChevronUp className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    )}
+                  </span>
+                </button>
+                {openAccordion === 'E' && (
+                  <div className="border-t border-slate-100 px-3.5 py-2.5 space-y-2">
+                    {EXPOSURE_INDICATORS.map((ind) => {
+                      const val = province.exposureIndicators[ind.id];
+                      const st = RISK_LEVEL_STYLES[scoreToRiskLevel(val)];
+                      return (
+                        <button
+                          key={ind.id}
+                          type="button"
+                          onClick={() => onChangeDimension('E', ind.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-slate-50"
+                        >
+                          <span className="w-36 truncate text-xs font-medium text-slate-800">
+                            {ind.shortNameTh}
+                          </span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs font-bold text-slate-900 tabular-nums">
+                            {val.toFixed(2)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ความเปราะบาง 4 ตัวชี้วัด */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setOpenAccordion(openAccordion === 'V' ? 'H' : 'V')}
+                  aria-expanded={openAccordion === 'V'}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
+                >
+                  <span className="text-[13px] font-semibold text-[#0C2340]">
+                    ความเปราะบาง (4 ตัวชี้วัด)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#0C2340] tabular-nums">
+                    {bd.vulnerabilityScore.toFixed(2)}
+                    {openAccordion === 'V' ? (
+                      <ChevronUp className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    )}
+                  </span>
+                </button>
+                {openAccordion === 'V' && (
+                  <div className="border-t border-slate-100 px-3.5 py-2.5 space-y-2">
+                    {VULNERABILITY_INDICATORS.map((ind) => {
+                      const val = province.vulnerabilityIndicators[ind.id];
+                      const st = RISK_LEVEL_STYLES[scoreToRiskLevel(val)];
+                      return (
+                        <button
+                          key={ind.id}
+                          type="button"
+                          onClick={() => onChangeDimension('V', ind.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-slate-50"
+                        >
+                          <span className="w-36 truncate text-xs font-medium text-slate-800">
+                            {ind.shortNameTh}
+                          </span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs font-bold text-slate-900 tabular-nums">
+                            {val.toFixed(2)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {bd.guardrailApplied && (
-              <p className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-950">
-                <strong>เกณฑ์เฝ้าระวังขั้นต่ำ:</strong> เนื่องจากจังหวัดมีระดับภัยคุกคามสูงมาก ({bd.hazardActiveScore?.toFixed(2)} คะแนน)
-                ระบบจึงคงคะแนนความเสี่ยงขั้นต่ำไว้ที่ {bd.guardrailFloor.toFixed(2)} เพื่อให้เฝ้าระวังต่อเนื่องแม้มีความพร้อมสูง
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={applyPresetCellAndTraining}
-              className="rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-50"
-            >
-              เพิ่ม Cell Broadcast และอบรม ปภ. (+1.0)
-            </button>
-            <button
-              type="button"
-              onClick={applyPresetModelProvince}
-              className="rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-50"
-            >
-              ยกระดับสู่เกณฑ์จังหวัดต้นแบบ
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <h3 className="font-bold text-[#0F294A]">
-                ปรับระดับศักยภาพรายด้าน (รวม {bd.effectiveCapacityScore.toFixed(2)} / 5.00)
-              </h3>
-              <span className="text-[11px] text-teal-800 tabular-nums">
-                ค่าฐาน {bd.baseCapacityScore.toFixed(2)}
-              </span>
-            </div>
-
-            {CAPACITY_INDICATORS.map((ind) => {
-              const baseVal = province.capacityIndicators[ind.id];
-              const currentVal = bd.effectiveCapacityIndicators[ind.id];
-              const diff = +(currentVal - baseVal).toFixed(2);
-              return (
-                <div
-                  key={ind.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 space-y-1.5"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <label htmlFor={`slider-${ind.id}`} className="text-xs font-semibold text-slate-800">
-                      {ind.shortNameTh}{' '}
-                      <span className="font-normal text-slate-500 tabular-nums">
-                        (น้ำหนัก {(ind.weight * 100).toFixed(0)}%)
-                      </span>
-                    </label>
-                    <span className="shrink-0 text-xs font-bold text-[#0F766E] tabular-nums">
-                      {currentVal.toFixed(2)}
-                      {diff !== 0 && (
-                        <span className={`ml-1 text-[10px] ${diff > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                          ({diff > 0 ? '+' : ''}
-                          {diff.toFixed(2)})
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <input
-                    id={`slider-${ind.id}`}
-                    type="range"
-                    min={1.0}
-                    max={5.0}
-                    step={0.1}
-                    value={currentVal}
-                    onChange={(e) => handleSliderChange(ind.id, parseFloat(e.target.value))}
-                    className="w-full accent-[#0F766E] cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
-                    <span>1.00 (เร่งเสริมศักยภาพ)</span>
-                    <span>ค่าฐาน {baseVal.toFixed(2)}</span>
-                    <span>5.00 (ต้นแบบ)</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* แถบ 4 แท็บในโหมดค่าฐานจำลอง (รวมรายอำเภอ) */}
-          <div
-            role="tablist"
-            aria-label="หมวดข้อมูลรายละเอียดจังหวัด"
-            className="grid grid-cols-4 border-b border-slate-200 bg-white"
-          >
-            {(
-              [
-                { id: 'hevc', label: '4 ปัจจัย' },
-                {
-                  id: 'districts',
-                  label:
-                    provinceDistricts.length > 0
-                      ? `รายอำเภอ (${provinceDistricts.length})`
-                      : 'รายอำเภอ',
-                },
-                { id: 'guidance', label: 'ปฏิบัติ 3 ระยะ' },
-                { id: 'governance', label: 'อ้างอิง' },
-              ] as const
-            ).map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`border-b-2 px-1.5 py-2.5 text-[11px] sm:text-xs font-semibold transition-colors tabular-nums ${
-                    active
-                      ? 'border-[#0F294A] text-[#0F294A] bg-slate-50/70'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 max-h-[540px]">
-            {activeTab === 'hevc' && (
-              <>
-                {/* สรุปภาพรวมรายจังหวัด */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[11px] font-semibold text-[#0F294A] mb-1">
-                    สรุปภาพรวมรายจังหวัด ({activePeriodLabelTh})
-                  </p>
-                  <p className="text-xs leading-relaxed text-slate-700">
-                    {selectedEvaluation.summaryTh}
-                  </p>
-                </div>
-
-                {/* กราฟแนวโน้มรายงวดเวลา (ความเสี่ยงสุทธิ vs ศักยภาพ) */}
-                <ProvinceTrendChart
-                  trend={provinceTrend}
-                  activePeriodId={activePeriodId}
-                  onSelectPeriod={onSelectPeriod}
-                />
-
-                {/* ภาพรวมและจุดเฝ้าระวังรายอำเภอ/เขต */}
-                {province.districtDiagnostics && (() => {
-                  const unit = province.dopaCode === '10' ? 'เขต' : 'อำเภอ';
-                  const diag = province.districtDiagnostics;
-                  return (
-                    <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-[#0F294A] tabular-nums">
-                          ภาพรวมราย{unit} ({diag.districtCount} แห่ง)
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('districts')}
-                          className="text-[11px] font-semibold text-[#1D4ED8] hover:underline"
-                        >
-                          ดูครบทุก{unit}
-                        </button>
+            {/* ส่วนกางดูเพิ่มเติม (Progressive Disclosure): แนวโน้มรายงวด + จุดเฝ้าระวังรายอำเภอ */}
+            {(provinceTrend.length >= 2 || province.districtDiagnostics) && (
+              <details className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5">
+                <summary className="cursor-pointer list-none flex items-center justify-between text-xs font-semibold text-[#0C2340]">
+                  <span>แนวโน้มรายงวดและจุดเฝ้าระวังราย{unit}</span>
+                  <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                </summary>
+                <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+                  {province.districtDiagnostics && (
+                    <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
+                      <div className="rounded-lg bg-slate-50 p-2.5">
+                        <p className="text-slate-500">ช่วงความเสี่ยงราย{unit}</p>
+                        <p className="font-bold text-[#0C2340]">
+                          {province.districtDiagnostics.riskMin.toFixed(2)} -{' '}
+                          {province.districtDiagnostics.riskMax.toFixed(2)}
+                        </p>
+                        <p className="text-slate-600 truncate">
+                          สูงสุด: {province.districtDiagnostics.highestRiskDistrict.fullNameTh}
+                        </p>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-[11px] tabular-nums">
-                        <div className="rounded-lg bg-slate-50 border border-slate-100 p-2">
-                          <p className="text-slate-500">ช่วงความเสี่ยงราย{unit}</p>
-                          <p className="font-bold text-[#0F294A]">
-                            {diag.riskMin.toFixed(2)} - {diag.riskMax.toFixed(2)}
-                          </p>
-                          <p className="text-[10px] text-slate-600 truncate">
-                            สูงสุด: {diag.highestRiskDistrict.fullNameTh}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-teal-50/50 border border-teal-100 p-2">
-                          <p className="text-teal-800">ช่วงศักยภาพราย{unit}</p>
-                          <p className="font-bold text-[#115E59]">
-                            {diag.capacityMin.toFixed(2)} - {diag.capacityMax.toFixed(2)}
-                          </p>
-                          <p className="text-[10px] text-teal-900 truncate">
-                            ควรเร่งเสริม: {diag.priorityCapacityDistrict.fullNameTh}
-                          </p>
-                        </div>
+                      <div className="rounded-lg bg-teal-50/70 p-2.5">
+                        <p className="text-teal-800">ช่วงศักยภาพราย{unit}</p>
+                        <p className="font-bold text-[#115E59]">
+                          {province.districtDiagnostics.capacityMin.toFixed(2)} -{' '}
+                          {province.districtDiagnostics.capacityMax.toFixed(2)}
+                        </p>
+                        <p className="text-teal-900 truncate">
+                          ควรเสริม: {province.districtDiagnostics.priorityCapacityDistrict.fullNameTh}
+                        </p>
                       </div>
-
-                      {diag.hasRiskHotspotAlert && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('districts')}
-                          className="w-full rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-left text-[11px] text-amber-950 hover:bg-amber-100/70 transition-colors tabular-nums"
-                        >
-                          <strong>พบจุดเฝ้าระวังพิเศษเฉพาะ{unit}:</strong>{' '}
-                          {diag.highestRiskDistrict.fullNameTh} (
-                          {diag.highestRiskDistrict.score.toFixed(2)} คะแนน)
-                          {diag.criticalRiskDistrictCount > 0
-                            ? ` | มี ${diag.criticalRiskDistrictCount} ${unit}ในเกณฑ์สูงมาก`
-                            : ''}
-                        </button>
-                      )}
-
-                      {diag.hasCapacityGapAlert && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('districts')}
-                          className="w-full rounded-lg border border-teal-300 bg-teal-50 px-2.5 py-1.5 text-left text-[11px] text-teal-950 hover:bg-teal-100/70 transition-colors tabular-nums"
-                        >
-                          <strong>พบ{unit}เป้าหมายเร่งเสริมศักยภาพ:</strong>{' '}
-                          {diag.priorityCapacityDistrict.fullNameTh} (ศักยภาพ{' '}
-                          {diag.priorityCapacityDistrict.score.toFixed(2)})
-                        </button>
-                      )}
                     </div>
-                  );
-                })()}
-
-                {/* Accordion 4 ปัจจัย */}
-                <div className="space-y-2">
-                  <div className="rounded-xl border border-teal-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setOpenAccordion(openAccordion === 'C' ? 'H' : 'C')}
-                      className="flex w-full items-center justify-between bg-teal-50/70 px-3 py-2.5 text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4 text-[#0F766E]" aria-hidden="true" />
-                        <span className="text-xs font-bold text-[#115E59]">
-                          ศักยภาพในการรับมือ (5 ตัวชี้วัด)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#115E59] tabular-nums">
-                          {bd.effectiveCapacityScore.toFixed(2)}
-                        </span>
-                        {openAccordion === 'C' ? (
-                          <ChevronUp className="h-4 w-4 text-teal-700" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-teal-700" />
-                        )}
-                      </div>
-                    </button>
-                    {openAccordion === 'C' && (
-                      <div className="divide-y divide-teal-100 bg-white p-2 space-y-1.5">
-                        {CAPACITY_INDICATORS.map((ind) => {
-                          const val = bd.effectiveCapacityIndicators[ind.id];
-                          const lvl = scoreToRiskLevel(val);
-                          const st = CAPACITY_LEVEL_STYLES[lvl];
-                          const isProjected =
-                            activeDimension === 'C' && activeSubIndicator === ind.id;
-                          return (
-                            <div key={ind.id} className="pt-1.5 first:pt-0">
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="font-medium text-slate-800 truncate" title={ind.nameTh}>
-                                  {ind.shortNameTh}
-                                </span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="font-bold text-[#115E59] tabular-nums">
-                                    {val.toFixed(2)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => onChangeDimension('C', ind.id)}
-                                    title="แสดงตัวชี้วัดนี้บนแผนที่ 77 จังหวัด"
-                                    className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                                      isProjected
-                                        ? 'border-[#0F766E] bg-[#0F766E] text-white'
-                                        : 'border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
-                                    }`}
-                                  >
-                                    <MapIcon className="h-2.5 w-2.5" aria-hidden="true" />
-                                    แผนที่
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => setPanelMode('simulator')}
-                          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#0F766E] py-1.5 text-xs font-semibold text-white hover:bg-[#115E59]"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-                          จำลองแผนเพิ่มศักยภาพจังหวัดนี้
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. ภัยคุกคาม */}
-                  <div className="rounded-xl border border-slate-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setOpenAccordion(openAccordion === 'H' ? 'E' : 'H')}
-                      className="flex w-full items-center justify-between bg-slate-50 px-3 py-2.5 text-left"
-                    >
-                      <span className="text-xs font-bold text-[#0F294A]">
-                        ภัยคุกคาม (10 ประเภทภัย)
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#0F294A] tabular-nums">
-                          {bd.hazardCompositeScore.toFixed(2)}
-                        </span>
-                        {openAccordion === 'H' ? (
-                          <ChevronUp className="h-4 w-4 text-slate-500" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-slate-500" />
-                        )}
-                      </div>
-                    </button>
-                    {openAccordion === 'H' && (
-                      <div className="bg-white p-2 space-y-1.5">
-                        {sortedHazards.map((hazard) => {
-                          const entry = province.hazards[hazard.id];
-                          const isNa = !entry.applicable || entry.score === null;
-                          const lvl = isNa ? null : scoreToRiskLevel(entry.score!);
-                          const st = lvl !== null ? RISK_LEVEL_STYLES[lvl] : null;
-                          const isCurrent =
-                            (activeDimension === 'R' || activeDimension === 'H') &&
-                            activeLayer === hazard.id;
-                          return (
-                            <button
-                              key={hazard.id}
-                              type="button"
-                              onClick={() => onChangeLayer(hazard.id)}
-                              className={`w-full rounded-lg border p-1.5 text-left transition-colors ${
-                                isCurrent
-                                  ? 'border-[#1D4ED8] bg-blue-50/60'
-                                  : 'border-slate-100 hover:border-slate-300'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="flex items-center gap-1.5 font-medium text-slate-800 truncate">
-                                  <HazardIcon layer={hazard.id} className="h-3.5 w-3.5 text-slate-500" />
-                                  <span className="truncate">{hazard.nameTh}</span>
-                                </span>
-                                <span className="flex items-center gap-1.5 shrink-0 tabular-nums">
-                                  <span className="font-bold text-slate-900">
-                                    {isNa ? 'N/A' : entry.score!.toFixed(2)}
-                                  </span>
-                                  <span
-                                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                                    style={{
-                                      backgroundColor: st ? st.tintBg : NA_RISK_STYLE.tintBg,
-                                      color: st ? st.tintText : NA_RISK_STYLE.tintText,
-                                    }}
-                                  >
-                                    {st ? `${st.symbol} ระดับ ${lvl}` : '— N/A'}
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                                {!isNa && st && (
-                                  <div
-                                    className="h-full rounded-full"
-                                    style={{
-                                      width: `${(entry.score! / 5) * 100}%`,
-                                      backgroundColor: st.mapFill,
-                                    }}
-                                  />
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 3. ความล่อแหลม (E • 4 ตัวชี้วัดย่อย) */}
-                  <div className="rounded-xl border border-slate-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setOpenAccordion(openAccordion === 'E' ? 'V' : 'E')}
-                      className="flex w-full items-center justify-between bg-slate-50 px-3 py-2.5 text-left"
-                    >
-                      <span className="text-xs font-bold text-[#0F294A]">
-                        ความล่อแหลม (4 ตัวชี้วัด)
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#0F294A] tabular-nums">
-                          {bd.exposureScore.toFixed(2)}
-                        </span>
-                        {openAccordion === 'E' ? (
-                          <ChevronUp className="h-4 w-4 text-slate-500" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-slate-500" />
-                        )}
-                      </div>
-                    </button>
-                    {openAccordion === 'E' && (
-                      <div className="divide-y divide-slate-100 bg-white p-2 space-y-1.5">
-                        {EXPOSURE_INDICATORS.map((ind) => {
-                          const val = province.exposureIndicators[ind.id];
-                          const st = RISK_LEVEL_STYLES[scoreToRiskLevel(val)];
-                          const isProjected =
-                            activeDimension === 'E' && activeSubIndicator === ind.id;
-                          return (
-                            <div key={ind.id} className="pt-1.5 first:pt-0">
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="font-medium text-slate-800 truncate" title={ind.nameTh}>
-                                  {ind.shortNameTh}
-                                </span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="font-bold text-slate-900 tabular-nums">
-                                    {val.toFixed(2)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => onChangeDimension('E', ind.id)}
-                                    className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                                      isProjected
-                                        ? 'border-[#1D4ED8] bg-[#1D4ED8] text-white'
-                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <MapIcon className="h-2.5 w-2.5" aria-hidden="true" />
-                                    แผนที่
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 4. ความเปราะบาง (V • 4 ตัวชี้วัดย่อย) */}
-                  <div className="rounded-xl border border-slate-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setOpenAccordion(openAccordion === 'V' ? 'C' : 'V')}
-                      className="flex w-full items-center justify-between bg-slate-50 px-3 py-2.5 text-left"
-                    >
-                      <span className="text-xs font-bold text-[#0F294A]">
-                        ความเปราะบาง (4 ตัวชี้วัด)
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#0F294A] tabular-nums">
-                          {bd.vulnerabilityScore.toFixed(2)}
-                        </span>
-                        {openAccordion === 'V' ? (
-                          <ChevronUp className="h-4 w-4 text-slate-500" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-slate-500" />
-                        )}
-                      </div>
-                    </button>
-                    {openAccordion === 'V' && (
-                      <div className="divide-y divide-slate-100 bg-white p-2 space-y-1.5">
-                        {VULNERABILITY_INDICATORS.map((ind) => {
-                          const val = province.vulnerabilityIndicators[ind.id];
-                          const st = RISK_LEVEL_STYLES[scoreToRiskLevel(val)];
-                          const isProjected =
-                            activeDimension === 'V' && activeSubIndicator === ind.id;
-                          return (
-                            <div key={ind.id} className="pt-1.5 first:pt-0">
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="font-medium text-slate-800 truncate" title={ind.nameTh}>
-                                  {ind.shortNameTh}
-                                </span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="font-bold text-slate-900 tabular-nums">
-                                    {val.toFixed(2)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => onChangeDimension('V', ind.id)}
-                                    className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                                      isProjected
-                                        ? 'border-[#1D4ED8] bg-[#1D4ED8] text-white'
-                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <MapIcon className="h-2.5 w-2.5" aria-hidden="true" />
-                                    แผนที่
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{ width: `${(val / 5) * 100}%`, backgroundColor: st.mapFill }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  )}
+                  <ProvinceTrendChart
+                    trend={provinceTrend}
+                    activePeriodId={activePeriodId}
+                    onSelectPeriod={onSelectPeriod}
+                  />
                 </div>
-              </>
+              </details>
             )}
 
-            {activeTab === 'districts' && (
-              <ProvinceDistrictsTab
-                provinceNameTh={provinceTitle}
-                periodLabelTh={activePeriodLabelTh}
-                districts={provinceDistricts}
-                loading={districtsLoading}
-                authUser={authUser}
-                onOpenOfficerEdit={onOpenOfficerEdit}
-              />
-            )}
-
-            {activeTab === 'guidance' && (
-              <>
-                <div>
-                  <label
-                    htmlFor="guidance-hazard-select"
-                    className="block text-xs font-semibold text-slate-700 mb-1"
-                  >
-                    เลือกประเภทสาธารณภัยเพื่ออ่านแนวทางปฏิบัติตน:
+            {/* ส่วนกางดูเพิ่มเติม: แนวทางปฏิบัติ 3 ระยะและข้อมูลอ้างอิง */}
+            <details className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5">
+              <summary className="cursor-pointer list-none flex items-center justify-between text-xs font-semibold text-[#0C2340]">
+                <span>แนวทางปฏิบัติ 3 ระยะ และค่าเทียบเคียง</span>
+                <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+              </summary>
+              <div className="mt-3 space-y-3 border-t border-slate-100 pt-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="guidance-hazard-select" className="text-slate-600 shrink-0">
+                    เลือกภัย:
                   </label>
                   <select
                     id="guidance-hazard-select"
                     value={currentGuidanceHazardId}
                     onChange={(e) => setGuidanceHazardOverride(e.target.value as HazardId)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800"
+                    className="flex-1 h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-800"
                   >
-                    {sortedHazards.map((h) => {
-                      const sc = province.hazards[h.id].score;
-                      return (
-                        <option key={h.id} value={h.id}>
-                          {h.nameTh} ({sc !== null ? `คะแนน ${sc.toFixed(2)}` : 'ไม่เข้าข่าย N/A'})
-                        </option>
-                      );
-                    })}
+                    {HAZARD_CATALOG.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.nameTh}
+                      </option>
+                    ))}
                   </select>
-                  <p className="mt-1.5 text-[11px] text-slate-600">
-                    <strong className="text-slate-800">ช่วงเฝ้าระวังหลัก:</strong>{' '}
-                    {currentGuidanceDef.peakSeasonTh}
-                  </p>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {(
                     [
-                      {
-                        title: 'ระยะที่ 1: ก่อนเกิดภัย (การเตรียมความพร้อม)',
-                        items: currentGuidanceDef.guidance.before,
-                        accent: 'border-blue-200 bg-blue-50/50 text-blue-950',
-                      },
-                      {
-                        title: 'ระยะที่ 2: ขณะเกิดภัย (การปฏิบัติตนอย่างปลอดภัย)',
-                        items: currentGuidanceDef.guidance.during,
-                        accent: 'border-amber-200 bg-amber-50/50 text-amber-950',
-                      },
-                      {
-                        title: 'ระยะที่ 3: หลังเกิดภัย (การตรวจสอบและฟื้นฟู)',
-                        items: currentGuidanceDef.guidance.after,
-                        accent: 'border-emerald-200 bg-emerald-50/50 text-emerald-950',
-                      },
+                      { title: 'ก่อนเกิดภัย', items: currentGuidanceDef.guidance.before, bg: 'bg-blue-50/70' },
+                      { title: 'ขณะเกิดภัย', items: currentGuidanceDef.guidance.during, bg: 'bg-amber-50/70' },
+                      { title: 'หลังเกิดภัย', items: currentGuidanceDef.guidance.after, bg: 'bg-emerald-50/70' },
                     ] as const
                   ).map((phase) => (
-                    <div key={phase.title} className={`rounded-xl border p-3 ${phase.accent}`}>
-                      <h3 className="text-xs font-bold mb-1.5 flex items-center gap-1.5">
-                        <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                        {phase.title}
-                      </h3>
-                      <ol className="list-decimal pl-4 space-y-1 text-xs leading-relaxed">
-                        {phase.items.map((step, i) => (
-                          <li key={i}>{step}</li>
+                    <div key={phase.title} className={`rounded-lg ${phase.bg} p-2.5 space-y-1`}>
+                      <p className="font-semibold text-[#0C2340]">{phase.title}</p>
+                      <ul className="list-disc pl-4 space-y-0.5 text-slate-700 leading-relaxed">
+                        {phase.items.map((line) => (
+                          <li key={line}>{line}</li>
                         ))}
-                      </ol>
+                      </ul>
                     </div>
                   ))}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <h3 className="text-xs font-bold text-[#0F294A] mb-2">
-                    สายด่วนแจ้งเหตุและหน่วยงานอ้างอิง ({currentGuidanceDef.shortNameTh})
-                  </h3>
-                  <div className="space-y-1.5">
-                    {[...CORE_HOTLINES, ...currentGuidanceDef.hotlines]
-                      .filter(
-                        (item, idx, arr) => arr.findIndex((x) => x.number === item.number) === idx,
-                      )
-                      .map((contact) => (
-                        <a
-                          key={contact.number}
-                          href={`tel:${contact.number}`}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-blue-300 hover:bg-blue-50/40 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-slate-900 truncate">
-                              {contact.agency}
-                            </p>
-                            <p className="text-[11px] text-slate-500 truncate">{contact.note}</p>
-                          </div>
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#0F294A] px-2.5 py-1 text-xs font-bold text-white tabular-nums">
-                            <Phone className="h-3 w-3" aria-hidden="true" />
-                            {contact.number}
-                          </span>
-                        </a>
-                      ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {activeTab === 'governance' && (
-              <>
-                {/* ผลของศักยภาพพื้นที่ต่อความเสี่ยงสุทธิ */}
-                {bd.grossRiskScore !== null && bd.ddpmScore !== null && bd.cImpactDelta !== null && (
-                  <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-3">
-                    <h3 className="text-xs font-bold text-[#115E59] mb-2">
-                      ผลของศักยภาพพื้นที่ต่อความเสี่ยงสุทธิ
-                    </h3>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-lg bg-white p-2 border border-slate-200">
-                        <p className="text-[10px] text-slate-500">ก่อนหักศักยภาพ</p>
-                        <p className="text-sm font-bold text-slate-800 tabular-nums">
-                          {bd.grossRiskScore.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-white p-2 border border-slate-200">
-                        <p className="text-[10px] text-slate-500">ความเสี่ยงสุทธิ</p>
-                        <p className="text-sm font-bold text-[#0F294A] tabular-nums">
-                          {bd.ddpmScore.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-white p-2 border border-teal-200">
-                        <p className="text-[10px] text-teal-900">ผลต่อความเสี่ยง</p>
-                        <p
-                          className={`text-sm font-bold tabular-nums ${
-                            bd.cImpactDelta <= 0 ? 'text-emerald-700' : 'text-amber-700'
-                          }`}
-                        >
-                          {bd.cImpactDelta > 0 ? '+' : ''}
-                          {bd.cImpactDelta.toFixed(2)}
-                        </p>
-                      </div>
+                {benchmarks && (
+                  <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-2.5 text-center tabular-nums">
+                    <div>
+                      <p className="text-slate-500">จังหวัดนี้</p>
+                      <p className="font-bold text-[#0C2340]">
+                        {selectedEvaluation.score?.toFixed(2) ?? 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">เฉลี่ยภาค</p>
+                      <p className="font-bold text-slate-800">{benchmarks.regionAvg.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">เฉลี่ยประเทศ</p>
+                      <p className="font-bold text-slate-800">{benchmarks.countryAvg.toFixed(2)}</p>
                     </div>
                   </div>
                 )}
 
-                {benchmarks && selectedEvaluation.score !== null && (
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <h3 className="text-xs font-semibold text-[#0F294A] mb-2">
-                      เปรียบเทียบกับค่าเฉลี่ยภาคและประเทศ
-                    </h3>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-lg bg-blue-50 p-2">
-                        <p className="text-[11px] text-slate-600">{province.nameTh}</p>
-                        <p className="text-base font-bold text-[#0F294A] tabular-nums">
-                          {selectedEvaluation.score.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[11px] text-slate-600">
-                          เฉลี่ย{REGION6_LABELS[province.region6]}
-                        </p>
-                        <p className="text-base font-bold text-slate-800 tabular-nums">
-                          {benchmarks.regionAvg.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[11px] text-slate-600">เฉลี่ยทั้งประเทศ</p>
-                        <p className="text-base font-bold text-slate-800 tabular-nums">
-                          {benchmarks.countryAvg.toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
-                  <h3 className="font-semibold text-[#0F294A] flex items-center gap-1.5">
-                    <Info className="h-3.5 w-3.5 text-[#1D4ED8]" aria-hidden="true" />
-                    บริบทภูมิศาสตร์และลักษณะพื้นที่
-                  </h3>
-                  <p className="text-slate-700 leading-relaxed">{province.geographicNoteTh}</p>
-                  <p className="text-[11px] text-slate-600 border-t border-slate-200 pt-2">
-                    <strong>สถานะชายฝั่งทะเลเปิด:</strong>{' '}
-                    {province.coastalZone === 'andaman'
-                      ? 'ชายฝั่งทะเลอันดามัน เฝ้าระวังสึนามิและภัยชายฝั่ง ประเมินครบ 10 ประเภทภัย'
-                      : province.coastalZone === 'gulf'
-                        ? 'ชายฝั่งอ่าวไทย เฝ้าระวังคลื่นพายุซัดฝั่งและการกัดเซาะ ประเมินครบ 10 ประเภทภัย'
-                        : 'ไม่มีแนวชายฝั่งทะเลเปิด ไม่เข้าข่ายภัยสึนามิ (N/A) คำนวณค่าน้ำหนักจาก 9 ประเภทภัยที่เกี่ยวข้อง'}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => onOpenReportModal(province.nameTh)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
-                  >
-                    <Flag className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
-                    แจ้งข้อมูลคลาดเคลื่อน ({province.nameTh})
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                   <button
                     type="button"
                     onClick={onOpenChangelog}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    className="inline-flex items-center gap-1 font-medium text-[#1D4ED8] hover:underline"
                   >
-                    <FileClock className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                    ประวัติการปรับปรุงชุดข้อมูล
+                    <FileClock className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>ประวัติปรับปรุง</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenReportModal(provinceTitle)}
+                    className="inline-flex items-center gap-1 font-medium text-slate-700 hover:underline"
+                  >
+                    <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>แจ้งข้อมูลคลาดเคลื่อน</span>
                   </button>
                 </div>
-              </>
-            )}
+              </div>
+            </details>
+          </>
+        )}
+
+        {activeTab === 'districts' && (
+          <ProvinceDistrictsTab
+            provinceNameTh={provinceTitle}
+            periodLabelTh={activePeriodLabelTh}
+            districts={provinceDistricts}
+            loading={districtsLoading}
+            authUser={authUser}
+            onOpenDistrictEditor={(districtCode) =>
+              onOpenDistrictEditor(province.dopaCode, districtCode)
+            }
+          />
+        )}
+
+        {activeTab === 'simulate' && (
+          <div className="space-y-3.5">
+            <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-[#115E59]">
+                  จำลองเพิ่มศักยภาพเฉพาะ{provinceTitle}
+                </span>
+                {bd.isSimulated && (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateCapacityOverride(province.dopaCode, null)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-teal-900 ring-1 ring-teal-300 hover:bg-teal-100"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>คืนค่าเริ่มต้น</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
+                <div className="rounded-lg bg-white p-2">
+                  <p className="text-xs text-slate-500">เดิม</p>
+                  <p className="text-base font-bold text-slate-800">
+                    {bd.baseDdpmScore !== null ? bd.baseDdpmScore.toFixed(2) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white p-2 ring-1 ring-teal-300">
+                  <p className="text-xs font-semibold text-teal-900">หลังปรับแผน</p>
+                  <p className="text-base font-extrabold text-[#0C2340]">
+                    {bd.ddpmScore !== null ? bd.ddpmScore.toFixed(2) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white p-2">
+                  <p className="text-xs text-slate-500">ส่วนต่าง</p>
+                  <p
+                    className={`text-sm font-bold flex items-center justify-center gap-0.5 ${
+                      bd.simulationDeltaR < 0
+                        ? 'text-emerald-700'
+                        : bd.simulationDeltaR > 0
+                          ? 'text-rose-700'
+                          : 'text-slate-600'
+                    }`}
+                  >
+                    {bd.simulationDeltaR < 0 && <TrendingDown className="h-3.5 w-3.5" />}
+                    {bd.simulationDeltaR > 0 ? '+' : ''}
+                    {bd.simulationDeltaR.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {bd.guardrailApplied && (
+                <p className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-950">
+                  ภัยคุกคามอยู่ในเกณฑ์สูงมาก ระบบคงคะแนนเฝ้าระวังขั้นต่ำไว้ที่ {bd.guardrailFloor.toFixed(2)}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={applyPresetCellAndTraining}
+                className="rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-50"
+              >
+                เพิ่ม Cell Broadcast และอบรม (+1.0)
+              </button>
+              <button
+                type="button"
+                onClick={applyPresetModelProvince}
+                className="rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-50"
+              >
+                เกณฑ์จังหวัดต้นแบบ
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {CAPACITY_INDICATORS.map((ind) => {
+                const baseVal = province.capacityIndicators[ind.id];
+                const currentVal = bd.effectiveCapacityIndicators[ind.id];
+                const diff = +(currentVal - baseVal).toFixed(2);
+                return (
+                  <div key={ind.id} className="rounded-xl bg-slate-50 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <label htmlFor={`sim-slider-${ind.id}`} className="font-semibold text-slate-800">
+                        {ind.shortNameTh}
+                      </label>
+                      <span className="font-bold text-[#0D9488] tabular-nums">
+                        {currentVal.toFixed(2)}
+                        {diff !== 0 && (
+                          <span className={`ml-1 ${diff > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            ({diff > 0 ? '+' : ''}
+                            {diff.toFixed(2)})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <input
+                      id={`sim-slider-${ind.id}`}
+                      type="range"
+                      min={1.0}
+                      max={5.0}
+                      step={0.05}
+                      value={currentVal}
+                      onChange={(e) => handleSliderChange(ind.id, parseFloat(e.target.value))}
+                      className="w-full accent-[#0D9488] cursor-pointer"
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </aside>
   );
 }

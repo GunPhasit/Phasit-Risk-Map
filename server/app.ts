@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { PROVINCE_BY_CODE } from '../src/data/provincesRiskData.ts';
-import { RiskDatabase } from './database.ts';
+import { evaluateDistrictMetrics } from '../src/domain/districtRollup.ts';
+import type { StorageMode } from '../src/types/index.ts';
+import { computeMetricsDiff, RiskDatabase } from './database.ts';
 import {
   hasPrototypePollutionKeys,
   parseCookies,
@@ -35,6 +37,9 @@ export interface RiskApiServerOptions {
   dbPath?: string;
   staticDir?: string | null;
   demoMode?: boolean;
+  storageMode?: StorageMode;
+  masterKey?: Buffer;
+  journalMode?: 'WAL' | 'DELETE';
 }
 
 export interface LocalInvokeResponse {
@@ -47,7 +52,10 @@ export interface LocalInvokeResponse {
 
 export interface RiskApiServerHandle {
   server: http.Server;
-  db: RiskDatabase;
+  readonly db: RiskDatabase;
+  readonly storageMode: StorageMode;
+  closeDb: () => void;
+  reloadDb: () => void;
   invoke: (input: {
     method?: string;
     url: string;
@@ -249,9 +257,29 @@ function serveStaticFile(
 }
 
 export function createRiskApiServer(options: RiskApiServerOptions = {}): RiskApiServerHandle {
-  const db = new RiskDatabase(options.dbPath);
+  const dbOptions = {
+    masterKey: options.masterKey,
+    journalMode: options.journalMode,
+  };
+  let db = new RiskDatabase(options.dbPath, dbOptions);
+  let dbClosed = false;
   const staticDir = options.staticDir ?? null;
   const demoMode = options.demoMode ?? process.env.NODE_ENV !== 'production';
+  const storageMode: StorageMode =
+    options.storageMode ?? (options.dbPath === ':memory:' ? 'ephemeral-sqlite' : 'local-sqlite');
+
+  const closeDb = () => {
+    if (!dbClosed) {
+      db.close();
+      dbClosed = true;
+    }
+  };
+
+  const reloadDb = () => {
+    closeDb();
+    db = new RiskDatabase(options.dbPath, dbOptions);
+    dbClosed = false;
+  };
 
   const requestHandler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     try {
@@ -276,10 +304,42 @@ export function createRiskApiServer(options: RiskApiServerOptions = {}): RiskApi
         sendJson(res, 200, {
           status: 'ok',
           engine: 'node:sqlite',
+          storageMode,
           provinces: 77,
           districts: 928,
           periods: periods.length,
+          demoMode: demoMode && process.env.DDPM_STRICT_PROD !== 'true',
         });
+        return;
+      }
+
+      if (method === 'GET' && pathname === '/api/public/districts-catalog') {
+        const periodParam = urlObj.searchParams.get('period') ?? undefined;
+        const catalog = db.getDistrictsCatalogSummary(periodParam);
+        if (!catalog) {
+          sendJson(res, 404, { error: 'ไม่พบงวดข้อมูลที่ระบุ' });
+          return;
+        }
+        sendJson(res, 200, catalog);
+        return;
+      }
+
+      if (method === 'GET' && pathname === '/api/public/districts') {
+        const periodParam = urlObj.searchParams.get('period') ?? undefined;
+        const provinceParam = urlObj.searchParams.get('province') ?? undefined;
+        const qParam = urlObj.searchParams.get('q') ?? undefined;
+        const limitParam = Number(urlObj.searchParams.get('limit') ?? '100');
+        const result = db.searchDistricts({
+          provinceCode: provinceParam,
+          periodId: periodParam,
+          query: qParam,
+          limit: Number.isFinite(limitParam) ? limitParam : 100,
+        });
+        if (!result) {
+          sendJson(res, 404, { error: 'ไม่พบงวดข้อมูลที่ระบุ' });
+          return;
+        }
+        sendJson(res, 200, result);
         return;
       }
 
@@ -512,6 +572,17 @@ export function createRiskApiServer(options: RiskApiServerOptions = {}): RiskApi
         return;
       }
 
+      if (method === 'GET' && pathname === '/api/officer/province-progress') {
+        const periodParam = urlObj.searchParams.get('period') ?? undefined;
+        const progress = db.getProvinceProgress(authCtx.user, periodParam);
+        if (!progress) {
+          sendJson(res, 404, { error: 'ไม่พบงวดข้อมูลที่ระบุ' });
+          return;
+        }
+        sendJson(res, 200, progress);
+        return;
+      }
+
       const submitDistrictMatch = pathname.match(/^\/api\/districts\/(\d{4})\/submissions$/);
       if (method === 'POST' && submitDistrictMatch) {
         const targetDistrictCode = submitDistrictMatch[1];
@@ -583,6 +654,33 @@ export function createRiskApiServer(options: RiskApiServerOptions = {}): RiskApi
         if (!metricsCheck.ok) {
           sendJson(res, 400, { error: metricsCheck.error });
           return;
+        }
+
+        // Large-Jump Guardrail: หากเปลี่ยนตัวแปรตั้งแต่ 1.50 คะแนน หรือความเสี่ยงสุทธิอำเภอเปลี่ยนตั้งแต่ 0.80 คะแนน
+        // บังคับระบุเหตุผลอย่างน้อย 20 ตัวอักษร และเลขที่หนังสือ/เอกสารอ้างอิงอย่างน้อย 3 ตัวอักษร
+        const currentEval = db.getDistrictEvaluation(targetDistrictCode, periodId);
+        if (currentEval) {
+          const diffs = computeMetricsDiff(currentEval.metrics, metricsCheck.metrics);
+          const maxVarDelta = diffs.reduce((mx, d) => Math.max(mx, Math.abs(d.delta)), 0);
+          const afterPreview = evaluateDistrictMetrics(
+            distMeta,
+            provMeta,
+            periodId,
+            currentEval.version,
+            metricsCheck.metrics,
+            '',
+            '',
+          );
+          const ddpmDelta = Math.abs(afterPreview.ddpmScore - currentEval.ddpmScore);
+          if (maxVarDelta >= 1.5 || ddpmDelta >= 0.8) {
+            if (reasonCheck.value.length < 20 || refCheck.value.length < 3) {
+              sendJson(res, 400, {
+                error:
+                  'การเปลี่ยนแปลงคะแนนก้าวกระโดด (ตั้งแต่ 1.50 คะแนนต่อตัวแปร หรือความเสี่ยงสุทธิเปลี่ยนตั้งแต่ 0.80) ต้องระบุเหตุผลอย่างน้อย 20 ตัวอักษร และระบุเลขที่หนังสือหรือเอกสารอ้างอิง',
+              });
+              return;
+            }
+          }
         }
 
         const submitRes = db.submitDistrictChangeRequest({
@@ -818,17 +916,22 @@ export function createRiskApiServer(options: RiskApiServerOptions = {}): RiskApi
 
   return {
     server,
-    db,
+    get db() {
+      return db;
+    },
+    storageMode,
+    closeDb,
+    reloadDb,
     invoke,
     close: () =>
       new Promise<void>((resolve, reject) => {
         if (!server.listening) {
-          db.close();
+          closeDb();
           resolve();
           return;
         }
         server.close((err) => {
-          db.close();
+          closeDb();
           if (err) reject(err);
           else resolve();
         });

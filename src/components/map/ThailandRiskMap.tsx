@@ -44,6 +44,8 @@ interface ThailandRiskMapProps {
   regionFilter: RegionFilterKey;
   levelFilter: RiskLevel | null;
   simulatedCount: number;
+  patternMode: boolean;
+  onTogglePatternMode: () => void;
   onResetAllSimulations: () => void;
   onChangeLevelFilter: (level: RiskLevel | null) => void;
   onSelectProvince: (dopaCode: string) => void;
@@ -96,6 +98,8 @@ export function ThailandRiskMap({
   regionFilter,
   levelFilter,
   simulatedCount,
+  patternMode,
+  onTogglePatternMode,
   onResetAllSimulations,
   onChangeLevelFilter,
   onSelectProvince,
@@ -109,7 +113,6 @@ export function ThailandRiskMap({
     y: 0,
     width: 600,
   });
-  const [patternMode, setPatternMode] = useState(false);
 
   const palette = getPaletteForDimension(activeDimension);
   const isCapacityMode = activeDimension === 'C';
@@ -446,42 +449,42 @@ export function ThailandRiskMap({
     });
 
   return (
-    <div className="relative flex flex-col rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+    <div className="gov-card relative flex flex-col overflow-hidden">
       {/* แถบหัวแผนที่ + ปุ่ม Quick Zoom + สถานะโหมดจำลองสถานการณ์ */}
       <div
-        className={`flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:px-4 ${
+        className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 ${
           isCapacityMode
-            ? 'border-teal-200 bg-teal-50/70'
-            : 'border-slate-100 bg-slate-50/70'
+            ? 'border-teal-200 bg-teal-50/60'
+            : 'border-slate-100 bg-white'
         }`}
       >
         <div className="min-w-0">
           <h2
             id="map-heading"
-            className={`truncate text-sm sm:text-base font-semibold ${
-              isCapacityMode ? 'text-[#115E59]' : 'text-[#0F294A]'
+            className={`truncate text-sm sm:text-base font-bold ${
+              isCapacityMode ? 'text-[#115E59]' : 'text-[#0C2340]'
             }`}
           >
             {activeMapHeading}
           </h2>
-          <p id="map-summary" className="text-[11px] sm:text-xs text-slate-600 tabular-nums">
+          <p id="map-summary" className="text-xs text-slate-600 tabular-nums mt-0.5">
             {isCapacityMode
               ? 'สีมรกตยิ่งเข้ม แสดงว่าจังหวัดมีความพร้อมและศักยภาพในการรับมือสูงขึ้น'
-              : 'เลือกจังหวัดบนแผนที่เพื่อดูรายละเอียดรายปัจจัยและจำลองแผนเพิ่มศักยภาพ'}
+              : 'เลือกจังหวัดบนแผนที่เพื่อดูรายละเอียดรายปัจจัย รายอำเภอ และจำลองแผนเพิ่มศักยภาพ'}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
           {simulatedCount > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-md border border-teal-500 bg-teal-600 px-2 py-1 text-[11px] font-semibold text-white">
-              <SlidersHorizontal className="h-3 w-3" aria-hidden="true" />
-              <span className="tabular-nums">กำลังจำลองแผน ({simulatedCount} จังหวัด)</span>
+            <div className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D9488] px-2.5 py-1.5 text-xs font-semibold text-white">
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="tabular-nums">จำลองแผน ({simulatedCount} จว.)</span>
               <button
                 type="button"
                 onClick={onResetAllSimulations}
-                className="ml-0.5 rounded bg-white/20 px-1.5 py-0.5 text-[10px] hover:bg-white/30"
+                className="ml-0.5 rounded bg-white/20 px-1.5 py-0.5 text-xs hover:bg-white/30"
               >
-                คืนค่าเริ่มต้น
+                คืนค่า
               </button>
             </div>
           )}
@@ -489,33 +492,33 @@ export function ThailandRiskMap({
           <button
             type="button"
             onClick={() => zoomToCodes(BMA6_CODES, 80)}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             title="ขยายแผนที่กรุงเทพมหานครและปริมณฑล 6 จังหวัด"
           >
-            <Crosshair className="h-3 w-3 text-[#1D4ED8]" aria-hidden="true" />
-            <span>ขยาย กทม.-ปริมณฑล</span>
+            <Crosshair className="h-3.5 w-3.5 text-[#1D4ED8]" aria-hidden="true" />
+            <span>กทม.-ปริมณฑล</span>
           </button>
           <button
             type="button"
             onClick={() => zoomToCodes(PHUKET_CODES, 140)}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             title="ขยายแผนที่จังหวัดภูเก็ต"
           >
-            <Crosshair className="h-3 w-3 text-[#1D4ED8]" aria-hidden="true" />
-            <span>ขยายภูเก็ต</span>
+            <Crosshair className="h-3.5 w-3.5 text-[#1D4ED8]" aria-hidden="true" />
+            <span>ภูเก็ต</span>
           </button>
           <button
             type="button"
-            onClick={() => setPatternMode((v) => !v)}
+            onClick={onTogglePatternMode}
             aria-pressed={patternMode}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+            className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
               patternMode
-                ? 'border-[#0F294A] bg-[#0F294A] text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                ? 'border-[#0C2340] bg-[#0C2340] text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
             }`}
             title="แสดงลวดลายซ้อนทับสีแผนที่ เพื่อช่วยให้ผู้มีภาวะตาบอดสีแยกแยะระดับได้ชัดเจนขึ้น"
           >
-            <Eye className="h-3 w-3" aria-hidden="true" />
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">ลวดลายช่วยแยกสี</span>
             <span className="sm:hidden">ลวดลาย</span>
           </button>
@@ -524,7 +527,7 @@ export function ThailandRiskMap({
 
       {/* พื้นที่แผนที่ SVG หลัก + กรอบขยาย Inset (แยกจากชั้นซูม และพอดีหน้าจอ Desktop 1440x900) */}
       <div
-        className="relative w-full bg-[#EAF2F8] h-[52dvh] min-h-[380px] sm:h-[530px] lg:h-[550px] xl:h-[570px] select-none"
+        className="relative w-full bg-[#EBF2F7] h-[52dvh] min-h-[380px] sm:h-[530px] lg:h-[560px] xl:h-[580px] select-none"
         onMouseMove={handlePointerMove}
       >
         <svg
@@ -716,11 +719,11 @@ export function ThailandRiskMap({
                 <strong>{hoveredEval.breakdown.exposureScore.toFixed(1)}</strong>
               </div>
               <div className="rounded bg-slate-100 py-0.5 text-slate-700">
-                <span className="block text-[9px] text-slate-500">เปราะบาง</span>
+                <span className="block text-xs text-slate-500">เปราะบาง</span>
                 <strong>{hoveredEval.breakdown.vulnerabilityScore.toFixed(1)}</strong>
               </div>
               <div className="rounded bg-teal-50 py-0.5 text-teal-900">
-                <span className="block text-[9px] text-teal-700">ศักยภาพ</span>
+                <span className="block text-xs text-teal-700">ศักยภาพ</span>
                 <strong>{hoveredEval.breakdown.effectiveCapacityScore.toFixed(1)}</strong>
               </div>
             </div>
@@ -730,8 +733,8 @@ export function ThailandRiskMap({
 
       {/* แถบคำอธิบายสัญลักษณ์ 5 ระดับ (น้ำเงิน->แดง สำหรับ R/H/E/V | มรกตอ่อน->เข้ม สำหรับ C) */}
       <div
-        className={`border-t px-3 py-2 sm:px-4 ${
-          isCapacityMode ? 'border-teal-200 bg-teal-50/40' : 'border-slate-200 bg-white'
+        className={`border-t px-4 py-2.5 ${
+          isCapacityMode ? 'border-teal-200 bg-teal-50/40' : 'border-slate-100 bg-white'
         }`}
       >
         <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -753,16 +756,16 @@ export function ThailandRiskMap({
                   type="button"
                   onClick={() => onChangeLevelFilter(active ? null : lvl)}
                   aria-pressed={active}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition-all ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all ${
                     active
                       ? isCapacityMode
-                        ? 'border-[#115E59] bg-[#115E59] text-white shadow-xs'
-                        : 'border-[#0F294A] bg-slate-900 text-white shadow-xs'
+                        ? 'border-[#0D9488] bg-[#0D9488] text-white shadow-xs'
+                        : 'border-[#0C2340] bg-[#0C2340] text-white shadow-xs'
                       : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   <span
-                    className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-[10px] font-bold ring-1 ring-slate-900/10"
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-xs font-bold ring-1 ring-slate-900/10"
                     style={{
                       backgroundColor: style.mapFill,
                       color: isCapacityMode && lvl <= 3 ? '#0F172A' : style.badgeText,
@@ -775,7 +778,7 @@ export function ThailandRiskMap({
                     {lvl}. {style.shortLabelTh}
                   </span>
                   <span
-                    className={`text-[11px] tabular-nums ${
+                    className={`text-xs tabular-nums ${
                       active ? 'text-white/80' : 'text-slate-500'
                     }`}
                   >
